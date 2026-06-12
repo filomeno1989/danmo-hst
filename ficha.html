@@ -210,7 +210,9 @@
             <input type="tel" id="f-contacto1" class="form-input" placeholder="8XX XXX XXX" />
           </div>
           <div class="form-grupo">
-            <label class="form-label">Contacto 2</label>
+            <label class="flex items-center gap-1">
+              <label class="form-label">Contacto 2</label>
+            </label>
             <input type="tel" id="f-contacto2" class="form-input" placeholder="8XX XXX XXX" />
           </div>
           <div class="form-grupo">
@@ -312,7 +314,7 @@
         tbody.innerHTML = '';
         semRes.style.display = 'block';
         return;
-      </div>
+      }
       semRes.style.display = 'none';
 
       tbody.innerHTML = colaboradoresFiltrados.map(c => {
@@ -429,7 +431,6 @@
       abrirModalEditar(idActual);
     }
 
-    // Limpar formulário mantém os IDs originais do HTML para preservar estilos
     function limparFormulario() {
       ['f-codigo','f-nome','f-funcao','f-naturalidade','f-nascimento','f-idade',
        'f-data-admissao-danmo','f-data-admissao-grupo','f-empresa-origem',
@@ -499,6 +500,16 @@
       document.getElementById('f-idade').value = nasc ? calcularIdade(nasc) + ' anos' : '';
     }
 
+    // Função local para amparar a lógica caso falte no utils.js
+    function calcularIdade(dataNasc) {
+      const hoje = new Date();
+      const nasc = new Date(dataNasc);
+      let idade = hoje.getFullYear() - nasc.getFullYear();
+      const m = hoje.getMonth() - nasc.getMonth();
+      if (m < 0 || (m === 0 && hoje.getDate() < nasc.getDate())) { idade--; }
+      return idade;
+    }
+
     function calcularTempos() {
       const admDanmo = document.getElementById('f-data-admissao-danmo').value;
       const admGrupo = document.getElementById('f-data-admissao-grupo').value;
@@ -512,9 +523,9 @@
 
       // Tempo grupo (só transferidos)
       if (isTransf && admGrupo && admDanmo) {
-        // Tempo antes da Danmo (no grupo noutro sítio)
+        // Tempo antes da Danmo
         document.getElementById('f-tempo-grupo-antes').value = calcularTempoLongo(admGrupo, admDanmo);
-        // Tempo total no grupo (desde admissão no grupo até hoje ou inativo)
+        // Tempo total no grupo
         document.getElementById('f-tempo-total').value = calcularTempoLongo(admGrupo, dataFim);
       }
     }
@@ -529,7 +540,7 @@
       if (!nome || !codigo || !funcao || !admDanmo) {
         mostrarToast('Preenche os campos obrigatórios (*)', 'aviso');
         return;
-      </div>
+      }
 
       const vinculo = document.querySelector('input[name="tipo_vinculo"]:checked').value;
       const isInativo = document.getElementById('f-status').value === 'Inativo';
@@ -540,15 +551,14 @@
         if (!empresa || !admGrupo) {
           mostrarToast('Preenche a empresa de origem e a data de admissão no grupo', 'aviso');
           return;
-        </div>
+        }
       }
 
       if (isInativo && !document.getElementById('f-data-inativo').value) {
         mostrarToast('Indica a data de desvinculamento', 'aviso');
         return;
-      </div>
+      }
 
-      // Payload mapeado para enviar a chave "código" com acento exigida pela Supabase
       const payload = {
         código:               parseInt(codigo),
         nome:                 nome,
@@ -584,7 +594,7 @@
       if (error) {
         mostrarToast('Erro ao guardar: ' + error.message, 'erro');
         return;
-      </div>
+      }
 
       mostrarToast(idActual ? 'Ficha actualizada!' : 'Colaborador adicionado!', 'sucesso');
       fecharModal('modal-ficha');
@@ -708,7 +718,6 @@
       document.getElementById(id).classList.remove('aberto');
     }
 
-    // Fechar ao clicar fora
     document.querySelectorAll('.modal-overlay').forEach(overlay => {
       overlay.addEventListener('click', e => {
         if (e.target === overlay) overlay.classList.remove('aberto');
