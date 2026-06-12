@@ -25,7 +25,6 @@
       <button class="btn btn-primario" onclick="abrirModalNovo()">➕ Novo Colaborador</button>
     </div>
 
-    <!-- Barra de pesquisa e filtros -->
     <div class="barra-pesquisa">
       <input type="text" id="pesquisa" class="pesquisa-input" placeholder="🔍 Pesquisar por nome, código ou função..." oninput="filtrarTabela()" />
       <select class="form-select" style="width:auto;min-width:140px" id="filtro-status" onchange="filtrarTabela()">
@@ -40,7 +39,6 @@
       </select>
     </div>
 
-    <!-- Tabela -->
     <div class="card">
       <div class="tabela-wrapper">
         <table>
@@ -67,9 +65,6 @@
 
   </main>
 
-  <!-- ══════════════════════════════════════════
-       MODAL — DETALHE / EDIÇÃO
-  ══════════════════════════════════════════ -->
   <div class="modal-overlay" id="modal-ficha">
     <div class="modal" style="max-width:720px">
       <div class="modal-header">
@@ -78,7 +73,6 @@
       </div>
       <div class="modal-corpo">
 
-        <!-- Vínculo (determina campos visíveis) -->
         <div class="form-grupo">
           <label class="form-label">Tipo de Vínculo *</label>
           <div class="flex gap-2">
@@ -91,7 +85,6 @@
           </div>
         </div>
 
-        <!-- Secção transferido -->
         <div id="secao-transferido" style="display:none">
           <div class="form-grid-2 mb-2">
             <div class="form-grupo">
@@ -107,7 +100,6 @@
 
         <hr class="sep" style="margin:0.75rem 0 1rem" />
 
-        <!-- Dados principais -->
         <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ Dados Pessoais</p>
         <div class="form-grid-3">
           <div class="form-grupo">
@@ -152,7 +144,6 @@
           </div>
         </div>
 
-        <!-- Admissão e serviço -->
         <hr class="sep" style="margin:0.75rem 0 1rem" />
         <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ Admissão e Serviço</p>
 
@@ -167,7 +158,6 @@
           </div>
         </div>
 
-        <!-- Tempo total (só transferidos) -->
         <div id="secao-tempo-grupo" style="display:none">
           <div class="form-grid-2">
             <div class="form-grupo">
@@ -181,7 +171,6 @@
           </div>
         </div>
 
-        <!-- Status -->
         <div class="form-grid-2">
           <div class="form-grupo">
             <label class="form-label">Status *</label>
@@ -196,7 +185,6 @@
           </div>
         </div>
 
-        <!-- Documentos -->
         <hr class="sep" style="margin:0.75rem 0 1rem" />
         <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ Documentos</p>
         <div class="form-grid-3">
@@ -214,7 +202,6 @@
           </div>
         </div>
 
-        <!-- Contactos -->
         <hr class="sep" style="margin:0.75rem 0 1rem" />
         <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ Contactos</p>
         <div class="form-grid-3">
@@ -232,7 +219,6 @@
           </div>
         </div>
 
-        <!-- Saúde -->
         <hr class="sep" style="margin:0.75rem 0 1rem" />
         <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ Saúde</p>
         <div class="form-grid-3">
@@ -258,7 +244,6 @@
           </div>
         </div>
 
-        <!-- Observações -->
         <hr class="sep" style="margin:0.75rem 0 1rem" />
         <div class="form-grupo">
           <label class="form-label">Observações Gerais</label>
@@ -274,9 +259,6 @@
     </div>
   </div>
 
-  <!-- ══════════════════════════════════════════
-       MODAL — DETALHE (só leitura)
-  ══════════════════════════════════════════ -->
   <div class="modal-overlay" id="modal-detalhe">
     <div class="modal" style="max-width:680px">
       <div class="modal-header">
@@ -330,7 +312,7 @@
         tbody.innerHTML = '';
         semRes.style.display = 'block';
         return;
-      }
+      </div>
       semRes.style.display = 'none';
 
       tbody.innerHTML = colaboradoresFiltrados.map(c => {
@@ -349,7 +331,7 @@
 
         return `
           <tr>
-            <td class="bold texto-acento">${c.codigo ?? '—'}</td>
+            <td class="bold texto-acento">${c.código ?? '—'}</td>
             <td>
               <div class="bold">${c.nome}</div>
               ${c.doenca_cronica ? `<div style="font-size:0.75rem;color:var(--texto-secundario)">${c.doenca_cronica}</div>` : ''}
@@ -380,7 +362,7 @@
       colaboradoresFiltrados = colaboradores.filter(c => {
         const matchTermo = !termo ||
           (c.nome || '').toLowerCase().includes(termo) ||
-          String(c.codigo || '').includes(termo) ||
+          String(c.código || '').includes(termo) ||
           (c.funcao || '').toLowerCase().includes(termo);
         const matchStatus = !status || c.status === status;
         const matchVinculo = !vinculo || c.tipo_vinculo === vinculo;
@@ -447,6 +429,7 @@
       abrirModalEditar(idActual);
     }
 
+    // Limpar formulário mantém os IDs originais do HTML para preservar estilos
     function limparFormulario() {
       ['f-codigo','f-nome','f-funcao','f-naturalidade','f-nascimento','f-idade',
        'f-data-admissao-danmo','f-data-admissao-grupo','f-empresa-origem',
@@ -466,9 +449,9 @@
     }
 
     function preencherFormulario(c) {
-      document.getElementById('f-codigo').value       = c.codigo ?? '';
-      document.getElementById('f-nome').value         = c.nome ?? '';
-      document.getElementById('f-funcao').value       = c.funcao ?? '';
+      document.getElementById('f-codigo').value       = c.código ?? '';
+      document.getElementById('f-nome').value          = c.nome ?? '';
+      document.getElementById('f-funcao').value        = c.funcao ?? '';
       document.getElementById('f-naturalidade').value = c.naturalidade ?? '';
       document.getElementById('f-nascimento').value   = c.data_nascimento ? c.data_nascimento.split('T')[0] : '';
       document.getElementById('f-mes-ferias').value   = c.mes_ferias ?? '';
@@ -477,12 +460,12 @@
       document.getElementById('f-empresa-origem').value = c.empresa_origem ?? '';
       document.getElementById('f-status').value       = c.status ?? 'Atico';
       document.getElementById('f-data-inativo').value = c.data_inativo ? c.data_inativo.split('T')[0] : '';
-      document.getElementById('f-bi').value           = c.bi_numero ?? '';
-      document.getElementById('f-inss').value         = c.inss_numero ?? '';
-      document.getElementById('f-nuit').value         = c.nuit_numero ?? '';
+      document.getElementById('f-bi').value            = c.bi_numero ?? '';
+      document.getElementById('f-inss').value          = c.inss_numero ?? '';
+      document.getElementById('f-nuit').value          = c.nuit_numero ?? '';
       document.getElementById('f-contacto1').value    = c.contacto_1 ?? '';
       document.getElementById('f-contacto2').value    = c.contacto_2 ?? '';
-      document.getElementById('f-email').value        = c.email ?? '';
+      document.getElementById('f-email').value         = c.email ?? '';
       document.getElementById('f-grupo-sanguineo').value = c.grupo_sanguineo ?? '';
       document.getElementById('f-doenca').value       = c.doenca_cronica ?? '';
       document.getElementById('f-altura').value       = c.altura_cm ?? '';
@@ -546,7 +529,7 @@
       if (!nome || !codigo || !funcao || !admDanmo) {
         mostrarToast('Preenche os campos obrigatórios (*)', 'aviso');
         return;
-      }
+      </div>
 
       const vinculo = document.querySelector('input[name="tipo_vinculo"]:checked').value;
       const isInativo = document.getElementById('f-status').value === 'Inativo';
@@ -557,16 +540,17 @@
         if (!empresa || !admGrupo) {
           mostrarToast('Preenche a empresa de origem e a data de admissão no grupo', 'aviso');
           return;
-        }
+        </div>
       }
 
       if (isInativo && !document.getElementById('f-data-inativo').value) {
         mostrarToast('Indica a data de desvinculamento', 'aviso');
         return;
-      }
+      </div>
 
+      // Payload mapeado para enviar a chave "código" com acento exigida pela Supabase
       const payload = {
-        codigo:               parseInt(codigo),
+        código:               parseInt(codigo),
         nome:                 nome,
         funcao:               funcao,
         naturalidade:         document.getElementById('f-naturalidade').value.trim() || null,
@@ -600,7 +584,7 @@
       if (error) {
         mostrarToast('Erro ao guardar: ' + error.message, 'erro');
         return;
-      }
+      </div>
 
       mostrarToast(idActual ? 'Ficha actualizada!' : 'Colaborador adicionado!', 'sucesso');
       fecharModal('modal-ficha');
@@ -646,7 +630,7 @@
         <div class="flex justify-between items-center mb-2">
           <div>
             <span class="bold" style="font-size:1.1rem">${c.nome}</span>
-            <span class="texto-muted" style="margin-left:0.5rem">Nº ${c.codigo ?? '—'}</span>
+            <span class="texto-muted" style="margin-left:0.5rem">Nº ${c.código ?? '—'}</span>
           </div>
           ${statusBadge}
         </div>
