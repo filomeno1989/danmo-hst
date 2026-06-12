@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DSS | Fichas de Colaboradores</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase.js"></script>
+  <script src="auth.js"></script>
+  <script src="tema.js"></script>
+  <script src="utils.js"></script>
+</head>
+<body>
+
+  <nav id="navbar"></nav>
+
+  <main class="pagina">
+
+    <div class="pagina-header flex justify-between items-center flex-wrap gap-2">
+      <div>
+        <h1 class="pagina-titulo">👤 Fichas de Colaboradores</h1>
+        <p class="pagina-subtitulo" id="subtitulo-contagem">A carregar...</p>
+      </div>
+      <button class="btn btn-primario" onclick="abrirModalNovo()">➕ Novo Colaborador</button>
+    </div>
+
+    <!-- Barra de pesquisa e filtros -->
+    <div class="barra-pesquisa">
+      <input type="text" id="pesquisa" class="pesquisa-input" placeholder="🔍 Pesquisar por nome, código ou função..." oninput="filtrarTabela()" />
+      <select class="form-select" style="width:auto;min-width:140px" id="filtro-status" onchange="filtrarTabela()">
+        <option value="">Todos</option>
+        <option value="Atico">Activos</option>
+        <option value="Inativo">Inativos</option>
+      </select>
+      <select class="form-select" style="width:auto;min-width:160px" id="filtro-vinculo" onchange="filtrarTabela()">
+        <option value="">Todos os vínculos</option>
+        <option value="contratado">Contratados</option>
+        <option value="transferido">Transferidos</option>
+      </select>
+    </div>
+
+    <!-- Tabela -->
+    <div class="card">
+      <div class="tabela-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Nº</th>
+              <th>Nome</th>
+              <th>Função</th>
+              <th>Vínculo</th>
+              <th>Admissão Danmo</th>
+              <th>Serviço Danmo</th>
+              <th>Serviço Grupo</th>
+              <th>Status</th>
+              <th>Acções</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-corpo"></tbody>
+        </table>
+      </div>
+      <div id="sem-resultados" style="display:none;text-align:center;padding:2rem;color:var(--texto-secundario)">
+        Nenhum colaborador encontrado.
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ══════════════════════════════════════════
+       MODAL — DETALHE / EDIÇÃO
+  ══════════════════════════════════════════ -->
+  <div class="modal-overlay" id="modal-ficha">
+    <div class="modal" style="max-width:720px">
+      <div class="modal-header">
+        <span class="modal-titulo" id="modal-ficha-titulo">Ficha do Colaborador</span>
+        <button class="modal-fechar" onclick="fecharModal('modal-ficha')">✕</button>
+      </div>
+      <div class="modal-corpo">
+
+        <!-- Vínculo (determina campos visíveis) -->
+        <div class="form-grupo">
+          <label class="form-label">Tipo de Vínculo *</label>
+          <div class="flex gap-2">
+            <label class="flex items-center gap-1" style="cursor:pointer">
+              <input type="radio" name="tipo_vinculo" value="contratado" onchange="toggleTransferido()" checked /> Contratado directamente
+            </label>
+            <label class="flex items-center gap-1" style="cursor:pointer">
+              <input type="radio" name="tipo_vinculo" value="transferido" onchange="toggleTransferido()" /> Transferido do Grupo
+            </label>
+          </div>
+        </div>
+
+        <!-- Secção transferido -->
+        <div id="secao-transferido" style="display:none">
+          <div class="form-grid-2 mb-2">
+            <div class="form-grupo">
+              <label class="form-label">Empresa de Origem *</label>
+              <input type="text" id="f-empresa-origem" class="form-input" placeholder="Ex: Mesquita Transitários" />
+            </div>
+            <div class="form-grupo">
+              <label class="form-label">Data de Admissão no Grupo *</label>
+              <input type="date" id="f-data-admissao-grupo" class="form-input" onchange="calcularTempos()" />
+            </div>
+          </div>
+        </div>
+
+        <hr class="sep" style="margin:0.75rem 0 1rem" />
+
+        <!-- Dados principais -->
+        <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ Dados Pessoais</p>
+        <div class="form-grid-3">
+          <div class="form-grupo">
+            <label class="form-label">Nº Trabalhador *</label>
+            <input type="number" id="f-codigo" class="form-input" placeholder="Ex: 13" />
+          </div>
+          <div class="form-grupo" style="grid-column:span 2">
+            <label class="form-label">Nome Completo *</label>
+            <input type="text" id="f-nome" class="form-input" placeholder="Nome completo" />
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Função *</label>
+            <input type="text" id="f-funcao" class="form-input" placeholder="Ex: Mecânico, Electricista..." />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Naturalidade</label>
+            <input type="text" id="f-naturalidade" class="form-input" placeholder="Cidade / Província" />
+          </div>
+        </div>
+
+        <div class="form-grid-3">
+          <div class="form-grupo">
+            <label class="form-label">Data de Nascimento</label>
+            <input type="date" id="f-nascimento" class="form-input" onchange="calcularIdadeAuto()" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Idade</label>
+            <input type="text" id="f-idade" class="form-input" readonly placeholder="Auto" style="opacity:0.6" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Mês de Férias</label>
+            <select id="f-mes-ferias" class="form-select">
+              <option value="">— Seleccionar —</option>
+              <option>Janeiro</option><option>Fevereiro</option><option>Março</option>
+              <option>Abril</option><option>Maio</option><option>Junho</option>
+              <option>Julho</option><option>Agosto</option><option>Setembro</option>
+              <option>Outubro</option><option>Novembro</option><option>Dezembro</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Admissão e serviço -->
+        <hr class="sep" style="margin:0.75rem 0 1rem" />
+        <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ Admissão e Serviço</p>
+
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Data de Admissão na Danmo *</label>
+            <input type="date" id="f-data-admissao-danmo" class="form-input" onchange="calcularTempos()" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Tempo na Danmo</label>
+            <input type="text" id="f-tempo-danmo" class="form-input" readonly placeholder="Auto" style="opacity:0.6" />
+          </div>
+        </div>
+
+        <!-- Tempo total (só transferidos) -->
+        <div id="secao-tempo-grupo" style="display:none">
+          <div class="form-grid-2">
+            <div class="form-grupo">
+              <label class="form-label">Tempo no Grupo Mesquita (antes da Danmo)</label>
+              <input type="text" id="f-tempo-grupo-antes" class="form-input" readonly style="opacity:0.6" />
+            </div>
+            <div class="form-grupo">
+              <label class="form-label">Tempo Total no Grupo</label>
+              <input type="text" id="f-tempo-total" class="form-input" readonly style="opacity:0.6;font-weight:700;color:var(--acento)" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Status -->
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Status *</label>
+            <select id="f-status" class="form-select" onchange="toggleInativo()">
+              <option value="Atico">Activo</option>
+              <option value="Inativo">Inactivo</option>
+            </select>
+          </div>
+          <div class="form-grupo" id="campo-data-inativo" style="display:none">
+            <label class="form-label">Data de Desvinculamento *</label>
+            <input type="date" id="f-data-inativo" class="form-input" />
+          </div>
+        </div>
+
+        <!-- Documentos -->
+        <hr class="sep" style="margin:0.75rem 0 1rem" />
+        <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ Documentos</p>
+        <div class="form-grid-3">
+          <div class="form-grupo">
+            <label class="form-label">B.I. Nº</label>
+            <input type="text" id="f-bi" class="form-input" placeholder="Nº do Bilhete" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">INSS Nº</label>
+            <input type="text" id="f-inss" class="form-input" placeholder="Nº INSS" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">NUIT Nº</label>
+            <input type="text" id="f-nuit" class="form-input" placeholder="Nº NUIT" />
+          </div>
+        </div>
+
+        <!-- Contactos -->
+        <hr class="sep" style="margin:0.75rem 0 1rem" />
+        <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ Contactos</p>
+        <div class="form-grid-3">
+          <div class="form-grupo">
+            <label class="form-label">Contacto 1</label>
+            <input type="tel" id="f-contacto1" class="form-input" placeholder="8XX XXX XXX" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Contacto 2</label>
+            <input type="tel" id="f-contacto2" class="form-input" placeholder="8XX XXX XXX" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Email</label>
+            <input type="email" id="f-email" class="form-input" placeholder="email@exemplo.com" />
+          </div>
+        </div>
+
+        <!-- Saúde -->
+        <hr class="sep" style="margin:0.75rem 0 1rem" />
+        <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ Saúde</p>
+        <div class="form-grid-3">
+          <div class="form-grupo">
+            <label class="form-label">Grupo Sanguíneo</label>
+            <select id="f-grupo-sanguineo" class="form-select">
+              <option value="">— Desconhecido —</option>
+              <option>A+</option><option>A-</option>
+              <option>B+</option><option>B-</option>
+              <option>AB+</option><option>AB-</option>
+              <option>O+</option><option>O-</option>
+            </select>
+          </div>
+          <div class="form-grupo" style="grid-column:span 2">
+            <label class="form-label">Doença Crónica</label>
+            <input type="text" id="f-doenca" class="form-input" placeholder="Ex: Hipertensão, Diabetes, Asma..." />
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Altura (cm) — do B.I.</label>
+            <input type="number" id="f-altura" class="form-input" placeholder="Ex: 172" min="140" max="220" />
+          </div>
+        </div>
+
+        <!-- Observações -->
+        <hr class="sep" style="margin:0.75rem 0 1rem" />
+        <div class="form-grupo">
+          <label class="form-label">Observações Gerais</label>
+          <textarea id="f-observacoes" class="form-textarea" placeholder="Notas relevantes sobre o colaborador..."></textarea>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secundario" onclick="fecharModal('modal-ficha')">Cancelar</button>
+        <button class="btn btn-perigo btn-sm" id="btn-apagar" onclick="confirmarApagar()" style="display:none">🗑 Apagar</button>
+        <button class="btn btn-primario" onclick="guardarFicha()">💾 Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       MODAL — DETALHE (só leitura)
+  ══════════════════════════════════════════ -->
+  <div class="modal-overlay" id="modal-detalhe">
+    <div class="modal" style="max-width:680px">
+      <div class="modal-header">
+        <span class="modal-titulo" id="det-nome-titulo">—</span>
+        <button class="modal-fechar" onclick="fecharModal('modal-detalhe')">✕</button>
+      </div>
+      <div class="modal-corpo" id="modal-detalhe-corpo"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secundario" onclick="fecharModal('modal-detalhe')">Fechar</button>
+        <a id="btn-ver-saude" href="saude.html" class="btn btn-primario" style="text-decoration:none">❤️ Ver Saúde</a>
+        <button class="btn btn-primario" id="btn-editar-detalhe" onclick="editarDoDetalhe()">✏️ Editar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    let colaboradores = [];
+    let colaboradoresFiltrados = [];
+    let idActual = null;
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      exigirAuth();
+      renderNavbar('ficha');
+      await carregarColaboradores();
+    });
+
+    // ── Carregar ──────────────────────────────
+    async function carregarColaboradores() {
+      const { data, error } = await db
+        .from('collaborators')
+        .select('*')
+        .order('nome');
+
+      if (error) { mostrarToast('Erro ao carregar colaboradores', 'erro'); return; }
+
+      colaboradores = data || [];
+      colaboradoresFiltrados = [...colaboradores];
+      renderTabela();
+      document.getElementById('subtitulo-contagem').textContent =
+        `${colaboradores.filter(c => c.status === 'Atico').length} activos · ${colaboradores.filter(c => c.status === 'Inativo').length} inativos`;
+    }
+
+    // ── Render tabela ─────────────────────────
+    function renderTabela() {
+      const tbody = document.getElementById('tabela-corpo');
+      const semRes = document.getElementById('sem-resultados');
+
+      if (colaboradoresFiltrados.length === 0) {
+        tbody.innerHTML = '';
+        semRes.style.display = 'block';
+        return;
+      }
+      semRes.style.display = 'none';
+
+      tbody.innerHTML = colaboradoresFiltrados.map(c => {
+        const tempoDanmo = calcularTempoServico(c.data_admissao_danmo, c.data_inativo);
+        const tempoGrupo = c.tipo_vinculo === 'transferido'
+          ? calcularTempoTotal(c.data_admissao_grupo, c.data_inativo)
+          : '—';
+
+        const statusBadge = c.status === 'Atico'
+          ? '<span class="badge badge-verde">● Activo</span>'
+          : '<span class="badge badge-cinza">● Inactivo</span>';
+
+        const vinculoBadge = c.tipo_vinculo === 'transferido'
+          ? '<span class="badge badge-azul">Transferido</span>'
+          : '<span class="badge badge-cinza">Contratado</span>';
+
+        return `
+          <tr>
+            <td class="bold texto-acento">${c.codigo ?? '—'}</td>
+            <td>
+              <div class="bold">${c.nome}</div>
+              ${c.doenca_cronica ? `<div style="font-size:0.75rem;color:var(--texto-secundario)">${c.doenca_cronica}</div>` : ''}
+            </td>
+            <td>${c.funcao ?? '—'}</td>
+            <td>${vinculoBadge}</td>
+            <td>${formatarData(c.data_admissao_danmo)}</td>
+            <td style="font-size:0.82rem">${tempoDanmo}</td>
+            <td style="font-size:0.82rem">${tempoGrupo}</td>
+            <td>${statusBadge}</td>
+            <td>
+              <div class="flex gap-1">
+                <button class="btn btn-secundario btn-sm" onclick="verDetalhe(${c.id})">👁</button>
+                <button class="btn btn-primario btn-sm" onclick="abrirModalEditar(${c.id})">✏️</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // ── Filtrar ───────────────────────────────
+    function filtrarTabela() {
+      const termo = document.getElementById('pesquisa').value.toLowerCase();
+      const status = document.getElementById('filtro-status').value;
+      const vinculo = document.getElementById('filtro-vinculo').value;
+
+      colaboradoresFiltrados = colaboradores.filter(c => {
+        const matchTermo = !termo ||
+          (c.nome || '').toLowerCase().includes(termo) ||
+          String(c.codigo || '').includes(termo) ||
+          (c.funcao || '').toLowerCase().includes(termo);
+        const matchStatus = !status || c.status === status;
+        const matchVinculo = !vinculo || c.tipo_vinculo === vinculo;
+        return matchTermo && matchStatus && matchVinculo;
+      });
+
+      renderTabela();
+    }
+
+    // ── Cálculo de tempos ─────────────────────
+    function calcularTempoServico(dataInicio, dataFim) {
+      if (!dataInicio) return '—';
+      const inicio = new Date(dataInicio);
+      const fim = dataFim ? new Date(dataFim) : new Date();
+      let anos = fim.getFullYear() - inicio.getFullYear();
+      let meses = fim.getMonth() - inicio.getMonth();
+      if (meses < 0) { anos--; meses += 12; }
+      return `${anos}a ${meses}m`;
+    }
+
+    function calcularTempoTotal(dataGrupo, dataFim) {
+      if (!dataGrupo) return '—';
+      const inicio = new Date(dataGrupo);
+      const fim = dataFim ? new Date(dataFim) : new Date();
+      let anos = fim.getFullYear() - inicio.getFullYear();
+      let meses = fim.getMonth() - inicio.getMonth();
+      if (meses < 0) { anos--; meses += 12; }
+      return `${anos}a ${meses}m`;
+    }
+
+    function calcularTempoLongo(dataInicio, dataFim) {
+      if (!dataInicio) return '—';
+      const inicio = new Date(dataInicio);
+      const fim = dataFim ? new Date(dataFim) : new Date();
+      let anos = fim.getFullYear() - inicio.getFullYear();
+      let meses = fim.getMonth() - inicio.getMonth();
+      let dias = fim.getDate() - inicio.getDate();
+      if (dias < 0) { meses--; dias += 30; }
+      if (meses < 0) { anos--; meses += 12; }
+      return `${anos} ano${anos !== 1 ? 's' : ''}, ${meses} mês${meses !== 1 ? 'es' : ''} e ${dias} dia${dias !== 1 ? 's' : ''}`;
+    }
+
+    // ── Modal novo / editar ───────────────────
+    function abrirModalNovo() {
+      idActual = null;
+      limparFormulario();
+      document.getElementById('modal-ficha-titulo').textContent = '➕ Novo Colaborador';
+      document.getElementById('btn-apagar').style.display = 'none';
+      abrirModal('modal-ficha');
+    }
+
+    function abrirModalEditar(id) {
+      idActual = id;
+      const c = colaboradores.find(x => x.id === id);
+      if (!c) return;
+      preencherFormulario(c);
+      document.getElementById('modal-ficha-titulo').textContent = `✏️ Editar — ${c.nome}`;
+      document.getElementById('btn-apagar').style.display = 'inline-flex';
+      abrirModal('modal-ficha');
+    }
+
+    function editarDoDetalhe() {
+      fecharModal('modal-detalhe');
+      abrirModalEditar(idActual);
+    }
+
+    function limparFormulario() {
+      ['f-codigo','f-nome','f-funcao','f-naturalidade','f-nascimento','f-idade',
+       'f-data-admissao-danmo','f-data-admissao-grupo','f-empresa-origem',
+       'f-tempo-danmo','f-tempo-grupo-antes','f-tempo-total',
+       'f-bi','f-inss','f-nuit','f-contacto1','f-contacto2','f-email',
+       'f-doenca','f-altura','f-observacoes','f-data-inativo'
+      ].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      document.getElementById('f-status').value = 'Atico';
+      document.getElementById('f-mes-ferias').value = '';
+      document.getElementById('f-grupo-sanguineo').value = '';
+      document.querySelector('input[name="tipo_vinculo"][value="contratado"]').checked = true;
+      toggleTransferido();
+      toggleInativo();
+    }
+
+    function preencherFormulario(c) {
+      document.getElementById('f-codigo').value       = c.codigo ?? '';
+      document.getElementById('f-nome').value         = c.nome ?? '';
+      document.getElementById('f-funcao').value       = c.funcao ?? '';
+      document.getElementById('f-naturalidade').value = c.naturalidade ?? '';
+      document.getElementById('f-nascimento').value   = c.data_nascimento ? c.data_nascimento.split('T')[0] : '';
+      document.getElementById('f-mes-ferias').value   = c.mes_ferias ?? '';
+      document.getElementById('f-data-admissao-danmo').value = c.data_admissao_danmo ? c.data_admissao_danmo.split('T')[0] : '';
+      document.getElementById('f-data-admissao-grupo').value = c.data_admissao_grupo ? c.data_admissao_grupo.split('T')[0] : '';
+      document.getElementById('f-empresa-origem').value = c.empresa_origem ?? '';
+      document.getElementById('f-status').value       = c.status ?? 'Atico';
+      document.getElementById('f-data-inativo').value = c.data_inativo ? c.data_inativo.split('T')[0] : '';
+      document.getElementById('f-bi').value           = c.bi_numero ?? '';
+      document.getElementById('f-inss').value         = c.inss_numero ?? '';
+      document.getElementById('f-nuit').value         = c.nuit_numero ?? '';
+      document.getElementById('f-contacto1').value    = c.contacto_1 ?? '';
+      document.getElementById('f-contacto2').value    = c.contacto_2 ?? '';
+      document.getElementById('f-email').value        = c.email ?? '';
+      document.getElementById('f-grupo-sanguineo').value = c.grupo_sanguineo ?? '';
+      document.getElementById('f-doenca').value       = c.doenca_cronica ?? '';
+      document.getElementById('f-altura').value       = c.altura_cm ?? '';
+      document.getElementById('f-observacoes').value  = c.observacoes_gerais ?? '';
+
+      // Vínculo
+      const vinculo = c.tipo_vinculo || 'contratado';
+      document.querySelector(`input[name="tipo_vinculo"][value="${vinculo}"]`).checked = true;
+      toggleTransferido();
+      toggleInativo();
+      calcularIdadeAuto();
+      calcularTempos();
+    }
+
+    // ── Toggles ───────────────────────────────
+    function toggleTransferido() {
+      const isTransf = document.querySelector('input[name="tipo_vinculo"]:checked').value === 'transferido';
+      document.getElementById('secao-transferido').style.display = isTransf ? 'block' : 'none';
+      document.getElementById('secao-tempo-grupo').style.display = isTransf ? 'block' : 'none';
+      calcularTempos();
+    }
+
+    function toggleInativo() {
+      const isInativo = document.getElementById('f-status').value === 'Inativo';
+      document.getElementById('campo-data-inativo').style.display = isInativo ? 'block' : 'none';
+    }
+
+    // ── Cálculos automáticos ──────────────────
+    function calcularIdadeAuto() {
+      const nasc = document.getElementById('f-nascimento').value;
+      document.getElementById('f-idade').value = nasc ? calcularIdade(nasc) + ' anos' : '';
+    }
+
+    function calcularTempos() {
+      const admDanmo = document.getElementById('f-data-admissao-danmo').value;
+      const admGrupo = document.getElementById('f-data-admissao-grupo').value;
+      const dataFim  = document.getElementById('f-data-inativo').value || null;
+      const isTransf = document.querySelector('input[name="tipo_vinculo"]:checked')?.value === 'transferido';
+
+      // Tempo na Danmo
+      if (admDanmo) {
+        document.getElementById('f-tempo-danmo').value = calcularTempoLongo(admDanmo, dataFim);
+      }
+
+      // Tempo grupo (só transferidos)
+      if (isTransf && admGrupo && admDanmo) {
+        // Tempo antes da Danmo (no grupo noutro sítio)
+        document.getElementById('f-tempo-grupo-antes').value = calcularTempoLongo(admGrupo, admDanmo);
+        // Tempo total no grupo (desde admissão no grupo até hoje ou inativo)
+        document.getElementById('f-tempo-total').value = calcularTempoLongo(admGrupo, dataFim);
+      }
+    }
+
+    // ── Guardar ───────────────────────────────
+    async function guardarFicha() {
+      const nome = document.getElementById('f-nome').value.trim();
+      const codigo = document.getElementById('f-codigo').value.trim();
+      const funcao = document.getElementById('f-funcao').value.trim();
+      const admDanmo = document.getElementById('f-data-admissao-danmo').value;
+
+      if (!nome || !codigo || !funcao || !admDanmo) {
+        mostrarToast('Preenche os campos obrigatórios (*)', 'aviso');
+        return;
+      }
+
+      const vinculo = document.querySelector('input[name="tipo_vinculo"]:checked').value;
+      const isInativo = document.getElementById('f-status').value === 'Inativo';
+
+      if (vinculo === 'transferido') {
+        const empresa = document.getElementById('f-empresa-origem').value.trim();
+        const admGrupo = document.getElementById('f-data-admissao-grupo').value;
+        if (!empresa || !admGrupo) {
+          mostrarToast('Preenche a empresa de origem e a data de admissão no grupo', 'aviso');
+          return;
+        }
+      }
+
+      if (isInativo && !document.getElementById('f-data-inativo').value) {
+        mostrarToast('Indica a data de desvinculamento', 'aviso');
+        return;
+      }
+
+      const payload = {
+        codigo:               parseInt(codigo),
+        nome:                 nome,
+        funcao:               funcao,
+        naturalidade:         document.getElementById('f-naturalidade').value.trim() || null,
+        data_nascimento:      document.getElementById('f-nascimento').value || null,
+        mes_ferias:           document.getElementById('f-mes-ferias').value || null,
+        tipo_vinculo:         vinculo,
+        data_admissao_danmo:  admDanmo,
+        data_admissao_grupo:  vinculo === 'transferido' ? (document.getElementById('f-data-admissao-grupo').value || null) : null,
+        empresa_origem:       vinculo === 'transferido' ? (document.getElementById('f-empresa-origem').value.trim() || null) : null,
+        status:               document.getElementById('f-status').value,
+        data_inativo:         isInativo ? (document.getElementById('f-data-inativo').value || null) : null,
+        bi_numero:            document.getElementById('f-bi').value.trim() || null,
+        inss_numero:          document.getElementById('f-inss').value.trim() || null,
+        nuit_numero:          document.getElementById('f-nuit').value.trim() || null,
+        contacto_1:           document.getElementById('f-contacto1').value.trim() || null,
+        contacto_2:           document.getElementById('f-contacto2').value.trim() || null,
+        email:                document.getElementById('f-email').value.trim() || null,
+        grupo_sanguineo:      document.getElementById('f-grupo-sanguineo').value || null,
+        doenca_cronica:       document.getElementById('f-doenca').value.trim() || null,
+        altura_cm:            document.getElementById('f-altura').value ? parseFloat(document.getElementById('f-altura').value) : null,
+        observacoes_gerais:   document.getElementById('f-observacoes').value.trim() || null,
+      };
+
+      let error;
+      if (idActual) {
+        ({ error } = await db.from('collaborators').update(payload).eq('id', idActual));
+      } else {
+        ({ error } = await db.from('collaborators').insert(payload));
+      }
+
+      if (error) {
+        mostrarToast('Erro ao guardar: ' + error.message, 'erro');
+        return;
+      }
+
+      mostrarToast(idActual ? 'Ficha actualizada!' : 'Colaborador adicionado!', 'sucesso');
+      fecharModal('modal-ficha');
+      await carregarColaboradores();
+    }
+
+    // ── Apagar ────────────────────────────────
+    function confirmarApagar() {
+      const c = colaboradores.find(x => x.id === idActual);
+      if (!c) return;
+      if (!confirm(`Apagar permanentemente "${c.nome}"?\n\nEsta acção não pode ser desfeita.`)) return;
+      apagarColaborador();
+    }
+
+    async function apagarColaborador() {
+      const { error } = await db.from('collaborators').delete().eq('id', idActual);
+      if (error) { mostrarToast('Erro ao apagar: ' + error.message, 'erro'); return; }
+      mostrarToast('Colaborador apagado.', 'sucesso');
+      fecharModal('modal-ficha');
+      await carregarColaboradores();
+    }
+
+    // ── Detalhe (só leitura) ──────────────────
+    function verDetalhe(id) {
+      idActual = id;
+      const c = colaboradores.find(x => x.id === id);
+      if (!c) return;
+
+      document.getElementById('det-nome-titulo').textContent = `👤 ${c.nome}`;
+      document.getElementById('btn-ver-saude').href = `saude.html?id=${c.id}`;
+
+      const tempoDanmo = calcularTempoLongo(c.data_admissao_danmo, c.data_inativo);
+      const tempoTotal = c.tipo_vinculo === 'transferido'
+        ? calcularTempoLongo(c.data_admissao_grupo, c.data_inativo) : null;
+      const tempoAntes = c.tipo_vinculo === 'transferido' && c.data_admissao_grupo && c.data_admissao_danmo
+        ? calcularTempoLongo(c.data_admissao_grupo, c.data_admissao_danmo) : null;
+
+      const statusBadge = c.status === 'Atico'
+        ? '<span class="badge badge-verde">● Activo</span>'
+        : '<span class="badge badge-cinza">● Inactivo</span>';
+
+      document.getElementById('modal-detalhe-corpo').innerHTML = `
+        <div class="flex justify-between items-center mb-2">
+          <div>
+            <span class="bold" style="font-size:1.1rem">${c.nome}</span>
+            <span class="texto-muted" style="margin-left:0.5rem">Nº ${c.codigo ?? '—'}</span>
+          </div>
+          ${statusBadge}
+        </div>
+        <div class="flex gap-1 mb-3 flex-wrap">
+          <span class="badge badge-cinza">${c.funcao ?? '—'}</span>
+          ${c.tipo_vinculo === 'transferido' ? '<span class="badge badge-azul">Transferido</span>' : '<span class="badge badge-cinza">Contratado</span>'}
+          ${c.grupo_sanguineo ? `<span class="badge badge-vermelho">🩸 ${c.grupo_sanguineo}</span>` : ''}
+          ${c.doenca_cronica ? `<span class="badge badge-laranja">⚕ ${c.doenca_cronica}</span>` : ''}
+        </div>
+
+        <hr class="sep" />
+
+        <div class="form-grid-2" style="gap:0.5rem 1.5rem;font-size:0.875rem">
+          ${linha('Nascimento', c.data_nascimento ? `${formatarData(c.data_nascimento)} (${calcularIdade(c.data_nascimento)} anos)` : '—')}
+          ${linha('Naturalidade', c.naturalidade)}
+          ${linha('Mês de Férias', c.mes_ferias)}
+          ${linha('Altura', c.altura_cm ? c.altura_cm + ' cm' : '—')}
+        </div>
+
+        <hr class="sep" />
+        <p class="form-label mb-1" style="color:var(--acento)">▸ Admissão e Serviço</p>
+        <div class="form-grid-2" style="gap:0.5rem 1.5rem;font-size:0.875rem">
+          ${linha('Admissão na Danmo', formatarData(c.data_admissao_danmo))}
+          ${linha('Tempo na Danmo', tempoDanmo)}
+          ${c.tipo_vinculo === 'transferido' ? `
+            ${linha('Empresa de Origem', c.empresa_origem)}
+            ${linha('Admissão no Grupo', formatarData(c.data_admissao_grupo))}
+            ${linha('Tempo antes da Danmo', tempoAntes)}
+            ${linha('Tempo Total no Grupo', `<strong class="texto-acento">${tempoTotal}</strong>`)}
+          ` : ''}
+          ${c.status === 'Inativo' ? linha('Data Desvinculamento', formatarData(c.data_inativo)) : ''}
+        </div>
+
+        <hr class="sep" />
+        <p class="form-label mb-1" style="color:var(--acento)">▸ Documentos</p>
+        <div class="form-grid-3" style="gap:0.5rem 1rem;font-size:0.875rem">
+          ${linha('B.I.', c.bi_numero)}
+          ${linha('INSS', c.inss_numero)}
+          ${linha('NUIT', c.nuit_numero)}
+        </div>
+
+        <hr class="sep" />
+        <p class="form-label mb-1" style="color:var(--acento)">▸ Contactos</p>
+        <div class="form-grid-3" style="gap:0.5rem 1rem;font-size:0.875rem">
+          ${linha('Contacto 1', c.contacto_1)}
+          ${linha('Contacto 2', c.contacto_2)}
+          ${linha('Email', c.email)}
+        </div>
+
+        ${c.observacoes_gerais ? `
+          <hr class="sep" />
+          <p class="form-label mb-1" style="color:var(--acento)">▸ Observações</p>
+          <p style="font-size:0.875rem;color:var(--texto-secundario)">${c.observacoes_gerais}</p>
+        ` : ''}
+      `;
+
+      abrirModal('modal-detalhe');
+    }
+
+    function linha(label, valor) {
+      return `
+        <div style="margin-bottom:0.4rem">
+          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--texto-secundario)">${label}</div>
+          <div style="font-weight:600">${valor || '—'}</div>
+        </div>
+      `;
+    }
+
+    // ── Modais ────────────────────────────────
+    function abrirModal(id) {
+      document.getElementById(id).classList.add('aberto');
+    }
+
+    function fecharModal(id) {
+      document.getElementById(id).classList.remove('aberto');
+    }
+
+    // Fechar ao clicar fora
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', e => {
+        if (e.target === overlay) overlay.classList.remove('aberto');
+      });
+    });
+  </script>
+
+</body>
+</html>
