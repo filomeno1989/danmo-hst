@@ -289,7 +289,7 @@
       await carregarColaboradores();
     });
 
-    // ── Carregar Puro usando a variável "db" correta do projeto ──
+    // ── Carregar com suporte duplo para código/código ──
     async function carregarColaboradores() {
       const { data, error } = await db
         .from('collaborators')
@@ -300,7 +300,6 @@
         return; 
       }
 
-      // Ordenação local para garantir robustez
       colaboradores = data || [];
       colaboradores.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
       
@@ -337,9 +336,12 @@
           ? '<span class="badge badge-azul">Transferido</span>'
           : '<span class="badge badge-cinza">Contratado</span>';
 
+        // Suporte a leituras com ou sem acento vindas do banco
+        const numColaborador = c.código !== undefined ? c.código : (c.codigo ?? '—');
+
         return `
           <tr>
-            <td class="bold texto-acento">${c.código ?? '—'}</td>
+            <td class="bold texto-acento">${numColaborador}</td>
             <td>
               <div class="bold">${c.nome}</div>
               ${c.doenca_cronica ? `<div style="font-size:0.75rem;color:var(--texto-secundario)">${c.doenca_cronica}</div>` : ''}
@@ -368,9 +370,10 @@
       const vinculo = document.getElementById('filtro-vinculo').value;
 
       colaboradoresFiltrados = colaboradores.filter(c => {
+        const codigoVal = c.código !== undefined ? c.código : (c.codigo || '');
         const matchTermo = !termo ||
           (c.nome || '').toLowerCase().includes(termo) ||
-          String(c.código || '').includes(termo) ||
+          String(codigoVal).includes(termo) ||
           (c.funcao || '').toLowerCase().includes(termo);
         const matchStatus = !status || c.status === status;
         const matchVinculo = !vinculo || c.tipo_vinculo === vinculo;
@@ -456,7 +459,8 @@
     }
 
     function preencherFormulario(c) {
-      document.getElementById('f-codigo').value       = c.código ?? '';
+      const codigoVal = c.código !== undefined ? c.código : (c.codigo ?? '');
+      document.getElementById('f-codigo').value       = codigoVal;
       document.getElementById('f-nome').value          = c.nome ?? '';
       document.getElementById('f-funcao').value        = c.funcao ?? '';
       document.getElementById('f-naturalidade').value = c.naturalidade ?? '';
@@ -530,7 +534,7 @@
       }
     }
 
-    // ── Guardar ───────────────────────────────
+    // ── Guardar Blindado (Envia com e sem acento no payload) ──
     async function guardarFicha() {
       const nome = document.getElementById('f-nome').value.trim();
       const codigo = document.getElementById('f-codigo').value.trim();
@@ -559,7 +563,10 @@
         return;
       }
 
+      // Payload duplo: injetamos "codigo" E "código" simultaneamente.
+      // O Supabase vai ler o que preferir e ignorar o outro sem dar erro 400.
       const payload = {
+        codigo:               parseInt(codigo),
         código:               parseInt(codigo),
         nome:                 nome,
         funcao:               funcao,
@@ -636,11 +643,13 @@
         ? '<span class="badge badge-verde">● Activo</span>'
         : '<span class="badge badge-cinza">● Inactivo</span>';
 
+      const codigoExibicao = c.código !== undefined ? c.código : (c.codigo ?? '—');
+
       document.getElementById('modal-detalhe-corpo').innerHTML = `
         <div class="flex justify-between items-center mb-2">
           <div>
             <span class="bold" style="font-size:1.1rem">${c.nome}</span>
-            <span class="texto-muted" style="margin-left:0.5rem">Nº ${c.código ?? '—'}</span>
+            <span class="texto-muted" style="margin-left:0.5rem">Nº ${codigoExibicao}</span>
           </div>
           ${statusBadge}
         </div>
@@ -671,7 +680,7 @@
             ${linha('Tempo antes da Danmo', tempoAntes)}
             ${linha('Tempo Total no Grupo', `<strong class="texto-acento">${tempoTotal}</strong>`)}
           ` : ''}
-          ${c.status === 'Inativo' ? inline('Data Desvinculamento', formatarData(c.data_inativo)) : ''}
+          ${c.status === 'Inativo' ? linha('Data Desvinculamento', formatarData(c.data_inativo)) : ''}
         </div>
 
         <hr class="sep" />
