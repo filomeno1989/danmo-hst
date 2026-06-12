@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DSS | Saúde</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="supabase.js"></script>
+  <script src="auth.js"></script>
+  <script src="tema.js"></script>
+  <script src="utils.js"></script>
+  <style>
+    .saude-layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+    .painel-colab {
+      background: var(--card-bg);
+      border: 1px solid var(--borda);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      position: sticky;
+      top: 80px;
+    }
+    .colab-item {
+      padding: 0.6rem 0.75rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+      border-left: 3px solid transparent;
+      margin-bottom: 0.25rem;
+    }
+    .colab-item:hover    { background: var(--bg-terciario); }
+    .colab-item.activo   { background: var(--bg-terciario); border-left-color: var(--acento); }
+    .colab-item-nome     { font-size: 0.85rem; font-weight: 600; }
+    .colab-item-detalhe  { font-size: 0.75rem; color: var(--texto-secundario); }
+    .colab-lista         { max-height: 65vh; overflow-y: auto; margin-top: 0.75rem; }
+
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 2px solid var(--borda);
+      padding-bottom: 0;
+    }
+    .tab-btn {
+      padding: 0.6rem 1.25rem;
+      border: none;
+      background: none;
+      color: var(--texto-secundario);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+    .tab-btn:hover  { color: var(--texto-primario); }
+    .tab-btn.activo { color: var(--acento); border-bottom-color: var(--acento); }
+
+    .tab-conteudo   { display: none; }
+    .tab-conteudo.activo { display: block; }
+
+    .alerta-saude {
+      border-radius: var(--radius);
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
+      border-left: 5px solid;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .alerta-saude.verde    { border-color: var(--verde);    background: rgba(34,197,94,0.07); }
+    .alerta-saude.laranja  { border-color: var(--laranja);  background: rgba(249,115,22,0.07); }
+    .alerta-saude.vermelho { border-color: var(--vermelho); background: rgba(239,68,68,0.07); }
+    .alerta-saude.azul     { border-color: var(--azul);     background: rgba(59,130,246,0.07); }
+    .alerta-saude.critico  { border-color: var(--critico);  background: rgba(220,38,38,0.1); }
+
+    .grafico-container {
+      position: relative;
+      height: 180px;
+      margin-bottom: 1.5rem;
+    }
+
+    .sem-colab {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 300px;
+      color: var(--texto-secundario);
+      text-align: center;
+      gap: 0.75rem;
+    }
+    .sem-colab-icon { font-size: 3rem; opacity: 0.4; }
+
+    @media (max-width: 900px) {
+      .saude-layout { grid-template-columns: 1fr; }
+      .painel-colab { position: static; }
+      .colab-lista  { max-height: 200px; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav id="navbar"></nav>
+
+  <main class="pagina">
+    <div class="pagina-header">
+      <h1 class="pagina-titulo">❤️ Saúde dos Colaboradores</h1>
+      <p class="pagina-subtitulo">Tensão arterial · Glicemia · Peso e IMC</p>
+    </div>
+
+    <div class="saude-layout">
+
+      <!-- ── Painel esquerdo: lista de colaboradores ── -->
+      <div class="painel-colab">
+        <input type="text" id="pesq-colab" class="pesquisa-input" style="width:100%"
+          placeholder="🔍 Pesquisar colaborador..." oninput="filtrarColabs()" />
+        <div class="colab-lista" id="colab-lista">
+          <div style="text-align:center;padding:1rem;color:var(--texto-secundario);font-size:0.85rem">
+            A carregar...
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Painel direito: dados de saúde ── -->
+      <div id="painel-saude">
+        <div class="sem-colab" id="sem-colab">
+          <div class="sem-colab-icon">👤</div>
+          <div>Selecciona um colaborador<br>para ver o histórico de saúde</div>
+        </div>
+
+        <div id="conteudo-saude" style="display:none">
+
+          <!-- Cabeçalho do colaborador -->
+          <div class="card mb-3" id="card-colab-header"></div>
+
+          <!-- Tabs -->
+          <div class="tabs">
+            <button class="tab-btn activo" onclick="mudarTab('tensao', this)">❤️ Tensão</button>
+            <button class="tab-btn" onclick="mudarTab('glicemia', this)">🩸 Glicemia</button>
+            <button class="tab-btn" onclick="mudarTab('peso', this)">⚖️ Peso / IMC</button>
+          </div>
+
+          <!-- ══ TAB TENSÃO ══ -->
+          <div class="tab-conteudo activo" id="tab-tensao">
+            <div class="flex justify-between items-center mb-3">
+              <span class="bold">Histórico de Tensão Arterial</span>
+              <button class="btn btn-primario btn-sm" onclick="abrirModalTensao()">
+                ➕ Registar Medição
+              </button>
+            </div>
+            <div id="alerta-tensao"></div>
+            <div class="card mb-3">
+              <div class="card-titulo">📈 Evolução (últimas 10 medições)</div>
+              <div class="grafico-container">
+                <canvas id="grafico-tensao"></canvas>
+              </div>
+            </div>
+            <div class="card">
+              <div class="tabela-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Data / Hora</th>
+                      <th>SYS</th>
+                      <th>DIA</th>
+                      <th>Pulso</th>
+                      <th>Classificação</th>
+                      <th>Condição</th>
+                      <th>Sintomas</th>
+                      <th>Obs.</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="tabela-tensao"></tbody>
+                </table>
+              </div>
+              <div id="sem-tensao" style="display:none;text-align:center;padding:1.5rem;
+                color:var(--texto-secundario);font-size:0.875rem">
+                Nenhuma medição registada.
+              </div>
+            </div>
+          </div>
+
+          <!-- ══ TAB GLICEMIA ══ -->
+          <div class="tab-conteudo" id="tab-glicemia">
+            <div class="flex justify-between items-center mb-3">
+              <span class="bold">Histórico de Glicemia</span>
+              <button class="btn btn-primario btn-sm" onclick="abrirModalGlicemia()">
+                ➕ Registar Análise
+              </button>
+            </div>
+            <div id="alerta-glicemia"></div>
+            <div class="card">
+              <div class="tabela-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Data / Hora</th>
+                      <th>Valor (mmol/L)</th>
+                      <th>Tipo</th>
+                      <th>Classificação</th>
+                      <th>Observações</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="tabela-glicemia"></tbody>
+                </table>
+              </div>
+              <div id="sem-glicemia" style="display:none;text-align:center;padding:1.5rem;
+                color:var(--texto-secundario);font-size:0.875rem">
+                Nenhuma análise registada.
+              </div>
+            </div>
+          </div>
+
+          <!-- ══ TAB PESO / IMC ══ -->
+          <div class="tab-conteudo" id="tab-peso">
+            <div class="flex justify-between items-center mb-3">
+              <span class="bold">Histórico de Peso e IMC</span>
+              <button class="btn btn-primario btn-sm" onclick="abrirModalPeso()">
+                ➕ Registar Peso
+              </button>
+            </div>
+            <div id="alerta-peso"></div>
+            <div class="card">
+              <div class="tabela-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Peso (kg)</th>
+                      <th>Altura (cm)</th>
+                      <th>IMC</th>
+                      <th>Classificação</th>
+                      <th>Observações</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="tabela-peso"></tbody>
+                </table>
+              </div>
+              <div id="sem-peso" style="display:none;text-align:center;padding:1.5rem;
+                color:var(--texto-secundario);font-size:0.875rem">
+                Nenhum registo de peso.
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /conteudo-saude -->
+      </div><!-- /painel-saude -->
+
+    </div><!-- /saude-layout -->
+  </main>
+
+  <!-- ══ MODAL TENSÃO ══ -->
+  <div class="modal-overlay" id="modal-tensao">
+    <div class="modal" style="max-width:500px">
+      <div class="modal-header">
+        <span class="modal-titulo" id="modal-tensao-titulo">➕ Registar Tensão</span>
+        <button class="modal-fechar" onclick="fecharModal('modal-tensao')">✕</button>
+      </div>
+      <div class="modal-corpo">
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Data *</label>
+            <input type="date" id="t-data" class="form-input" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Hora *</label>
+            <input type="time" id="t-hora" class="form-input" />
+          </div>
+        </div>
+        <div class="form-grid-3">
+          <div class="form-grupo">
+            <label class="form-label">SYS (mmHg) *</label>
+            <input type="number" id="t-sys" class="form-input" min="50" max="300"
+              placeholder="Ex: 130" oninput="previewTensao()" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">DIA (mmHg) *</label>
+            <input type="number" id="t-dia" class="form-input" min="30" max="200"
+              placeholder="Ex: 85" oninput="previewTensao()" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Pulso (bpm)</label>
+            <input type="number" id="t-pulso" class="form-input" min="30" max="250"
+              placeholder="Ex: 72" />
+          </div>
+        </div>
+
+        <!-- Preview classificação em tempo real -->
+        <div id="preview-tensao" style="display:none;margin-bottom:1rem"></div>
+
+        <div class="form-grupo">
+          <label class="form-label">Condição no momento *</label>
+          <select id="t-condicao" class="form-select">
+            <option value="repouso">Em repouso</option>
+            <option value="jejum">Em jejum</option>
+            <option value="apos_esforco">Após esforço físico</option>
+            <option value="ja_medicou">Já tomou medicação hoje</option>
+            <option value="nao_medicou">Ainda não tomou medicação</option>
+            <option value="outro">Outro</option>
+          </select>
+        </div>
+        <div class="form-grupo">
+          <label class="form-label">Sintomas referidos</label>
+          <input type="text" id="t-sintomas" class="form-input"
+            placeholder="Ex: Dor de cabeça, tonturas, visão turva..." />
+        </div>
+        <div class="form-grupo">
+          <label class="form-label">Observações</label>
+          <textarea id="t-obs" class="form-textarea" rows="2"
+            placeholder="Notas adicionais..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secundario" onclick="fecharModal('modal-tensao')">Cancelar</button>
+        <button class="btn btn-perigo btn-sm" id="btn-apagar-tensao"
+          onclick="apagarTensao()" style="display:none">🗑 Apagar</button>
+        <button class="btn btn-primario" onclick="guardarTensao()">💾 Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODAL GLICEMIA ══ -->
+  <div class="modal-overlay" id="modal-glicemia">
+    <div class="modal" style="max-width:440px">
+      <div class="modal-header">
+        <span class="modal-titulo" id="modal-glicemia-titulo">➕ Registar Glicemia</span>
+        <button class="modal-fechar" onclick="fecharModal('modal-glicemia')">✕</button>
+      </div>
+      <div class="modal-corpo">
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Data *</label>
+            <input type="date" id="g-data" class="form-input" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Hora</label>
+            <input type="time" id="g-hora" class="form-input" />
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Valor (mmol/L) *</label>
+            <input type="number" id="g-valor" class="form-input" step="0.1" min="1" max="30"
+              placeholder="Ex: 5.4" oninput="previewGlicemia()" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Tipo de medição *</label>
+            <select id="g-tipo" class="form-select">
+              <option value="jejum">Em jejum</option>
+              <option value="pos_refeicao">Pós-refeição</option>
+            </select>
+          </div>
+        </div>
+        <div id="preview-glicemia" style="display:none;margin-bottom:1rem"></div>
+        <div class="form-grupo">
+          <label class="form-label">Observações</label>
+          <textarea id="g-obs" class="form-textarea" rows="2"
+            placeholder="Ex: Dia anterior ingestão de açúcar..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secundario" onclick="fecharModal('modal-glicemia')">Cancelar</button>
+        <button class="btn btn-perigo btn-sm" id="btn-apagar-glicemia"
+          onclick="apagarGlicemia()" style="display:none">🗑 Apagar</button>
+        <button class="btn btn-primario" onclick="guardarGlicemia()">💾 Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODAL PESO ══ -->
+  <div class="modal-overlay" id="modal-peso">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header">
+        <span class="modal-titulo" id="modal-peso-titulo">➕ Registar Peso</span>
+        <button class="modal-fechar" onclick="fecharModal('modal-peso')">✕</button>
+      </div>
+      <div class="modal-corpo">
+        <div class="form-grupo">
+          <label class="form-label">Data *</label>
+          <input type="date" id="p-data" class="form-input" />
+        </div>
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Peso (kg) *</label>
+            <input type="number" id="p-peso" class="form-input" step="0.1" min="30" max="250"
+              placeholder="Ex: 78.5" oninput="previewPeso()" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Altura (cm)</label>
+            <input type="number" id="p-altura" class="form-input" readonly
+              style="opacity:0.6;cursor:default" />
+          </div>
+        </div>
+        <div id="preview-peso" style="display:none;margin-bottom:1rem"></div>
+        <div class="form-grupo">
+          <label class="form-label">Observações</label>
+          <textarea id="p-obs" class="form-textarea" rows="2"
+            placeholder="Ex: Após refeição, com roupa..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secundario" onclick="fecharModal('modal-peso')">Cancelar</button>
+        <button class="btn btn-perigo btn-sm" id="btn-apagar-peso"
+          onclick="apagarPeso()" style="display:none">🗑 Apagar</button>
+        <button class="btn btn-primario" onclick="guardarPeso()">💾 Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    let colaboradores    = [];
+    let colaborsFiltrados = [];
+    let colabActual      = null;
+    let idTensaoActual   = null;
+    let idGlicemiaActual = null;
+    let idPesoActual     = null;
+    let graficoTensao    = null;
+
+    // ── Cores para classificações ──
+    const COR_CSS = {
+      verde:    'var(--verde)',
+      laranja:  'var(--laranja)',
+      vermelho: 'var(--vermelho)',
+      azul:     'var(--azul)',
+      critico:  'var(--critico)',
+    };
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      exigirAuth();
+      renderNavbar('saude');
+      await carregarColaboradores();
+
+      // Se vier com ?id= na URL, seleccionar automaticamente
+      const params = new URLSearchParams(window.location.search);
+      const idParam = params.get('id');
+      if (idParam) {
+        const c = colaboradores.find(x => String(x.id) === idParam);
+        if (c) seleccionarColab(c);
+      }
+    });
+
+    // ── Carregar lista de colaboradores ──────────────────
+    async function carregarColaboradores() {
+      const { data } = await db
+        .from('collaborators')
+        .select('id, code, name, categoria, active, doenca_cronica, altura_cm')
+        .eq('active', true)
+        .order('name');
+
+      colaboradores    = data || [];
+      colaborsFiltrados = [...colaboradores];
+      renderColabs();
+    }
+
+    function renderColabs() {
+      const lista = document.getElementById('colab-lista');
+      if (colaborsFiltrados.length === 0) {
+        lista.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--texto-secundario);font-size:0.85rem">Nenhum colaborador encontrado.</div>';
+        return;
+      }
+      lista.innerHTML = colaborsFiltrados.map(c => `
+        <div class="colab-item ${colabActual?.id === c.id ? 'activo' : ''}"
+          onclick="seleccionarColab(${JSON.stringify(c).replace(/"/g,'&quot;')})">
+          <div class="colab-item-nome">${c.name}</div>
+          <div class="colab-item-detalhe">
+            ${c.code ?? '—'} · ${c.categoria ?? '—'}
+            ${c.doenca_cronica ? `· <span style="color:var(--laranja)">${c.doenca_cronica}</span>` : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function filtrarColabs() {
+      const termo = document.getElementById('pesq-colab').value.toLowerCase();
+      colaborsFiltrados = colaboradores.filter(c =>
+        (c.name || '').toLowerCase().includes(termo) ||
+        (c.code || '').toLowerCase().includes(termo) ||
+        (c.categoria || '').toLowerCase().includes(termo)
+      );
+      renderColabs();
+    }
+
+    // ── Seleccionar colaborador ───────────────────────────
+    async function seleccionarColab(c) {
+      colabActual = c;
+      document.getElementById('sem-colab').style.display = 'none';
+      document.getElementById('conteudo-saude').style.display = 'block';
+      renderColabs();
+      renderHeaderColab();
+      await carregarTensao();
+      await carregarGlicemia();
+      await carregarPeso();
+    }
+
+    function renderHeaderColab() {
+      const c = colabActual;
+      document.getElementById('card-colab-header').innerHTML = `
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <div class="bold" style="font-size:1.05rem">${c.name}</div>
+            <div class="texto-muted" style="font-size:0.85rem">
+              ${c.code ?? '—'} · ${c.categoria ?? '—'}
+              ${c.doenca_cronica ? `· <span style="color:var(--laranja)">⚕ ${c.doenca_cronica}</span>` : ''}
+            </div>
+          </div>
+          <div class="flex gap-1 flex-wrap">
+            ${c.altura_cm ? `<span class="badge badge-cinza">📏 ${c.altura_cm} cm</span>` : '<span class="badge badge-cinza">📏 Altura não definida</span>'}
+          </div>
+        </div>
+      `;
+    }
+
+    // ── TABS ──────────────────────────────────────────────
+    function mudarTab(tab, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('activo'));
+      document.querySelectorAll('.tab-conteudo').forEach(t => t.classList.remove('activo'));
+      btn.classList.add('activo');
+      document.getElementById('tab-' + tab).classList.add('activo');
+    }
+
+    // ══════════════════════════════════════════════════════
+    // TENSÃO
+    // ══════════════════════════════════════════════════════
+    async function carregarTensao() {
+      const { data } = await db
+        .from('hst_tensao')
+        .select('*')
+        .eq('collaborator_id', colabActual.id)
+        .order('data_medicao', { ascending: false });
+
+      const registos = data || [];
+
+      // Alerta da última medição
+      renderAlertaTensao(registos[0] || null);
+
+      // Gráfico
+      renderGraficoTensao(registos.slice(0, 10).reverse());
+
+      // Tabela
+      const tbody  = document.getElementById('tabela-tensao');
+      const semMsg = document.getElementById('sem-tensao');
+
+      if (registos.length === 0) {
+        tbody.innerHTML = '';
+        semMsg.style.display = 'block';
+        return;
+      }
+      semMsg.style.display = 'none';
+
+      tbody.innerHTML = registos.map(r => {
+        const c  = classificarTensao(r.sistolica, r.diastolica);
+        const cp = r.pulsacao ? classificarPulso(r.pulsacao) : null;
+        return `
+          <tr>
+            <td style="white-space:nowrap">${formatarDataHora(r.data_medicao)}</td>
+            <td class="bold" style="font-size:1rem">${r.sistolica}</td>
+            <td class="bold" style="font-size:1rem">${r.diastolica}</td>
+            <td>${r.pulsacao ? `${r.pulsacao} <span style="font-size:0.75rem;color:var(--texto-secundario)">bpm</span>` : '—'}</td>
+            <td><span class="badge badge-${badgeClass(c.cor)}">${c.emoji} ${c.nivel}</span>
+              ${cp && cp.cor !== 'verde' ? `<br><span class="badge badge-${badgeClass(cp.cor)}" style="margin-top:2px">${cp.emoji} ${cp.nivel}</span>` : ''}
+            </td>
+            <td style="font-size:0.8rem">${labelCondicao(r.condicao)}</td>
+            <td style="font-size:0.8rem;color:var(--texto-secundario)">${r.sintomas || '—'}</td>
+            <td style="font-size:0.8rem;color:var(--texto-secundario)">${r.observacoes || '—'}</td>
+            <td>
+              <button class="btn btn-secundario btn-sm" onclick="editarTensao(${r.id})">✏️</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderAlertaTensao(r) {
+      const el = document.getElementById('alerta-tensao');
+      if (!r) { el.innerHTML = ''; return; }
+      const c  = classificarTensao(r.sistolica, r.diastolica);
+      const cp = r.pulsacao ? classificarPulso(r.pulsacao) : null;
+      el.innerHTML = `
+        <div class="alerta-saude ${c.cor}">
+          <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">
+            ${c.emoji} Última medição — ${formatarDataHora(r.data_medicao)}
+          </div>
+          <div class="bold" style="font-size:1.3rem">
+            ${r.sistolica} / ${r.diastolica} mmHg
+            ${r.pulsacao ? `<span style="font-size:0.9rem;font-weight:400;color:var(--texto-secundario)">· ${r.pulsacao} bpm ${cp ? cp.emoji : ''}</span>` : ''}
+          </div>
+          <div style="font-weight:700">${c.nivel}</div>
+          <div style="font-size:0.85rem;opacity:0.85">${c.recomendacao}</div>
+          ${r.sintomas ? `<div style="font-size:0.8rem;opacity:0.7">Sintomas referidos: ${r.sintomas}</div>` : ''}
+        </div>
+      `;
+    }
+
+    function renderGraficoTensao(registos) {
+      const ctx = document.getElementById('grafico-tensao').getContext('2d');
+      if (graficoTensao) graficoTensao.destroy();
+
+      if (registos.length === 0) return;
+
+      const labels = registos.map(r => {
+        const d = new Date(r.data_medicao);
+        return `${d.getDate()}/${d.getMonth()+1} ${d.getHours()}h`;
+      });
+
+      graficoTensao = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Sistólica',
+              data: registos.map(r => r.sistolica),
+              borderColor: '#ef4444',
+              backgroundColor: 'rgba(239,68,68,0.1)',
+              tension: 0.3,
+              pointBackgroundColor: '#ef4444',
+            },
+            {
+              label: 'Diastólica',
+              data: registos.map(r => r.diastolica),
+              borderColor: '#f97316',
+              backgroundColor: 'rgba(249,115,22,0.1)',
+              tension: 0.3,
+              pointBackgroundColor: '#f97316',
+            },
+            {
+              label: 'Pulso',
+              data: registos.map(r => r.pulsacao || null),
+              borderColor: '#3b82f6',
+              backgroundColor: 'rgba(59,130,246,0.1)',
+              tension: 0.3,
+              pointBackgroundColor: '#3b82f6',
+              borderDash: [4, 4],
+            },
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+          },
+          scales: {
+            x: { ticks: { color: '#94a3b8', font: { size: 10 } }, grid: { color: '#334155' } },
+            y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' }, min: 40 },
+          }
+        }
+      });
+    }
+
+    // Modal tensão — novo
+    function abrirModalTensao() {
+      idTensaoActual = null;
+      document.getElementById('modal-tensao-titulo').textContent = '➕ Registar Tensão';
+      document.getElementById('btn-apagar-tensao').style.display = 'none';
+      const agora = new Date();
+      document.getElementById('t-data').value  = agora.toISOString().split('T')[0];
+      document.getElementById('t-hora').value  = agora.toTimeString().slice(0,5);
+      document.getElementById('t-sys').value   = '';
+      document.getElementById('t-dia').value   = '';
+      document.getElementById('t-pulso').value = '';
+      document.getElementById('t-sintomas').value = '';
+      document.getElementById('t-obs').value   = '';
+      document.getElementById('t-condicao').value = 'repouso';
+      document.getElementById('preview-tensao').style.display = 'none';
+      abrirModal('modal-tensao');
+    }
+
+    // Modal tensão — editar
+    async function editarTensao(id) {
+      const { data } = await db.from('hst_tensao').select('*').eq('id', id).single();
+      if (!data) return;
+      idTensaoActual = id;
+      document.getElementById('modal-tensao-titulo').textContent = '✏️ Editar Medição';
+      document.getElementById('btn-apagar-tensao').style.display = 'inline-flex';
+      const dt = new Date(data.data_medicao);
+      document.getElementById('t-data').value  = dt.toISOString().split('T')[0];
+      document.getElementById('t-hora').value  = dt.toTimeString().slice(0,5);
+      document.getElementById('t-sys').value   = data.sistolica;
+      document.getElementById('t-dia').value   = data.diastolica;
+      document.getElementById('t-pulso').value = data.pulsacao || '';
+      document.getElementById('t-condicao').value = data.condicao || 'repouso';
+      document.getElementById('t-sintomas').value = data.sintomas || '';
+      document.getElementById('t-obs').value   = data.observacoes || '';
+      previewTensao();
+      abrirModal('modal-tensao');
+    }
+
+    function previewTensao() {
+      const sys = parseInt(document.getElementById('t-sys').value);
+      const dia = parseInt(document.getElementById('t-dia').value);
+      const el  = document.getElementById('preview-tensao');
+      if (!sys || !dia) { el.style.display = 'none'; return; }
+      const c = classificarTensao(sys, dia);
+      el.style.display = 'block';
+      el.innerHTML = `
+        <div class="alerta-saude ${c.cor}" style="margin:0">
+          <div class="bold">${c.emoji} ${c.nivel}</div>
+          <div style="font-size:0.82rem">${c.recomendacao}</div>
+        </div>
+      `;
+    }
+
+    async function guardarTensao() {
+      const data    = document.getElementById('t-data').value;
+      const hora    = document.getElementById('t-hora').value;
+      const sys     = parseInt(document.getElementById('t-sys').value);
+      const dia     = parseInt(document.getElementById('t-dia').value);
+      const pulso   = document.getElementById('t-pulso').value;
+
+      if (!data || !sys || !dia) {
+        mostrarToast('Data, SYS e DIA são obrigatórios', 'aviso'); return;
+      }
+
+      const payload = {
+        collaborator_id: colabActual.id,
+        data_medicao:    `${data}T${hora || '00:00'}:00`,
+        sistolica:       sys,
+        diastolica:      dia,
+        pulsacao:        pulso ? parseInt(pulso) : null,
+        condicao:        document.getElementById('t-condicao').value,
+        sintomas:        document.getElementById('t-sintomas').value.trim() || null,
+        observacoes:     document.getElementById('t-obs').value.trim() || null,
+        registado_por:   obterCodigoUtilizador(),
+      };
+
+      const { error } = idTensaoActual
+        ? await db.from('hst_tensao').update(payload).eq('id', idTensaoActual)
+        : await db.from('hst_tensao').insert(payload);
+
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      mostrarToast('Medição guardada!', 'sucesso');
+      fecharModal('modal-tensao');
+      await carregarTensao();
+    }
+
+    async function apagarTensao() {
+      if (!confirm('Apagar esta medição?')) return;
+      const { error } = await db.from('hst_tensao').delete().eq('id', idTensaoActual);
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      mostrarToast('Medição apagada.', 'sucesso');
+      fecharModal('modal-tensao');
+      await carregarTensao();
+    }
+
+    // ══════════════════════════════════════════════════════
+    // GLICEMIA
+    // ══════════════════════════════════════════════════════
+    async function carregarGlicemia() {
+      const { data } = await db
+        .from('hst_glicemia')
+        .select('*')
+        .eq('collaborator_id', colabActual.id)
+        .order('data_medicao', { ascending: false });
+
+      const registos = data || [];
+      renderAlertaGlicemia(registos[0] || null);
+
+      const tbody  = document.getElementById('tabela-glicemia');
+      const semMsg = document.getElementById('sem-glicemia');
+
+      if (registos.length === 0) {
+        tbody.innerHTML = '';
+        semMsg.style.display = 'block';
+        return;
+      }
+      semMsg.style.display = 'none';
+
+      tbody.innerHTML = registos.map(r => {
+        const c = classificarGlicemia(r.valor_mmol);
+        return `
+          <tr>
+            <td>${formatarDataHora(r.data_medicao)}</td>
+            <td class="bold" style="font-size:1rem">${r.valor_mmol}</td>
+            <td>${r.tipo_medicao === 'jejum' ? '🌅 Jejum' : '🍽️ Pós-refeição'}</td>
+            <td><span class="badge badge-${badgeClass(c.cor)}">${c.emoji} ${c.nivel}</span></td>
+            <td style="font-size:0.8rem;color:var(--texto-secundario)">${r.observacoes || '—'}</td>
+            <td>
+              <button class="btn btn-secundario btn-sm" onclick="editarGlicemia(${r.id})">✏️</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderAlertaGlicemia(r) {
+      const el = document.getElementById('alerta-glicemia');
+      if (!r) { el.innerHTML = ''; return; }
+      const c = classificarGlicemia(r.valor_mmol);
+      el.innerHTML = `
+        <div class="alerta-saude ${c.cor}">
+          <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">
+            ${c.emoji} Última análise — ${formatarDataHora(r.data_medicao)}
+          </div>
+          <div class="bold" style="font-size:1.3rem">
+            ${r.valor_mmol} mmol/L
+            <span style="font-size:0.85rem;font-weight:400;color:var(--texto-secundario)">
+              · ${r.tipo_medicao === 'jejum' ? 'Em jejum' : 'Pós-refeição'}
+            </span>
+          </div>
+          <div style="font-weight:700">${c.nivel}</div>
+          <div style="font-size:0.85rem;opacity:0.85">${c.recomendacao}</div>
+        </div>
+      `;
+    }
+
+    function abrirModalGlicemia() {
+      idGlicemiaActual = null;
+      document.getElementById('modal-glicemia-titulo').textContent = '➕ Registar Glicemia';
+      document.getElementById('btn-apagar-glicemia').style.display = 'none';
+      const agora = new Date();
+      document.getElementById('g-data').value  = agora.toISOString().split('T')[0];
+      document.getElementById('g-hora').value  = agora.toTimeString().slice(0,5);
+      document.getElementById('g-valor').value = '';
+      document.getElementById('g-tipo').value  = 'jejum';
+      document.getElementById('g-obs').value   = '';
+      document.getElementById('preview-glicemia').style.display = 'none';
+      abrirModal('modal-glicemia');
+    }
+
+    async function editarGlicemia(id) {
+      const { data } = await db.from('hst_glicemia').select('*').eq('id', id).single();
+      if (!data) return;
+      idGlicemiaActual = id;
+      document.getElementById('modal-glicemia-titulo').textContent = '✏️ Editar Glicemia';
+      document.getElementById('btn-apagar-glicemia').style.display = 'inline-flex';
+      const dt = new Date(data.data_medicao);
+      document.getElementById('g-data').value  = dt.toISOString().split('T')[0];
+      document.getElementById('g-hora').value  = dt.toTimeString().slice(0,5);
+      document.getElementById('g-valor').value = data.valor_mmol;
+      document.getElementById('g-tipo').value  = data.tipo_medicao;
+      document.getElementById('g-obs').value   = data.observacoes || '';
+      previewGlicemia();
+      abrirModal('modal-glicemia');
+    }
+
+    function previewGlicemia() {
+      const val = parseFloat(document.getElementById('g-valor').value);
+      const el  = document.getElementById('preview-glicemia');
+      if (!val) { el.style.display = 'none'; return; }
+      const c = classificarGlicemia(val);
+      el.style.display = 'block';
+      el.innerHTML = `
+        <div class="alerta-saude ${c.cor}" style="margin:0">
+          <div class="bold">${c.emoji} ${c.nivel}</div>
+          <div style="font-size:0.82rem">${c.recomendacao}</div>
+        </div>
+      `;
+    }
+
+    async function guardarGlicemia() {
+      const data  = document.getElementById('g-data').value;
+      const hora  = document.getElementById('g-hora').value;
+      const valor = parseFloat(document.getElementById('g-valor').value);
+
+      if (!data || !valor) {
+        mostrarToast('Data e valor são obrigatórios', 'aviso'); return;
+      }
+
+      const payload = {
+        collaborator_id: colabActual.id,
+        data_medicao:    `${data}T${hora || '00:00'}:00`,
+        valor_mmol:      valor,
+        tipo_medicao:    document.getElementById('g-tipo').value,
+        observacoes:     document.getElementById('g-obs').value.trim() || null,
+        registado_por:   obterCodigoUtilizador(),
+      };
+
+      const { error } = idGlicemiaActual
+        ? await db.from('hst_glicemia').update(payload).eq('id', idGlicemiaActual)
+        : await db.from('hst_glicemia').insert(payload);
+
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      mostrarToast('Glicemia guardada!', 'sucesso');
+      fecharModal('modal-glicemia');
+      await carregarGlicemia();
+    }
+
+    async function apagarGlicemia() {
+      if (!confirm('Apagar este registo?')) return;
+      const { error } = await db.from('hst_glicemia').delete().eq('id', idGlicemiaActual);
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      mostrarToast('Registo apagado.', 'sucesso');
+      fecharModal('modal-glicemia');
+      await carregarGlicemia();
+    }
+
+    // ══════════════════════════════════════════════════════
+    // PESO / IMC
+    // ══════════════════════════════════════════════════════
+    async function carregarPeso() {
+      const { data } = await db
+        .from('hst_peso')
+        .select('*')
+        .eq('collaborator_id', colabActual.id)
+        .order('data_medicao', { ascending: false });
+
+      const registos = data || [];
+      renderAlertaPeso(registos[0] || null);
+
+      const tbody  = document.getElementById('tabela-peso');
+      const semMsg = document.getElementById('sem-peso');
+
+      if (registos.length === 0) {
+        tbody.innerHTML = '';
+        semMsg.style.display = 'block';
+        return;
+      }
+      semMsg.style.display = 'none';
+
+      tbody.innerHTML = registos.map(r => {
+        const imc = calcularIMC(r.peso_kg, colabActual.altura_cm);
+        const c   = imc ? classificarIMC(imc) : null;
+        return `
+          <tr>
+            <td>${formatarData(r.data_medicao)}</td>
+            <td class="bold">${r.peso_kg} kg</td>
+            <td>${colabActual.altura_cm ?? '—'}</td>
+            <td class="bold">${imc ?? '—'}</td>
+            <td>${c ? `<span class="badge badge-${badgeClass(c.cor)}">${c.emoji} ${c.nivel}</span>` : '—'}</td>
+            <td style="font-size:0.8rem;color:var(--texto-secundario)">${r.observacoes || '—'}</td>
+            <td>
+              <button class="btn btn-secundario btn-sm" onclick="editarPeso(${r.id})">✏️</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderAlertaPeso(r) {
+      const el = document.getElementById('alerta-peso');
+      if (!r) { el.innerHTML = ''; return; }
+      const imc = calcularIMC(r.peso_kg, colabActual.altura_cm);
+      if (!imc) {
+        el.innerHTML = `
+          <div class="alerta-saude azul">
+            <div class="bold">⚠️ Altura não definida na ficha</div>
+            <div style="font-size:0.85rem">Actualiza a altura do colaborador na ficha para calcular o IMC.</div>
+          </div>
+        `;
+        return;
+      }
+      const c = classificarIMC(imc);
+      el.innerHTML = `
+        <div class="alerta-saude ${c.cor}">
+          <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">
+            ${c.emoji} Último registo — ${formatarData(r.data_medicao)}
+          </div>
+          <div class="bold" style="font-size:1.3rem">
+            ${r.peso_kg} kg
+            <span style="font-size:0.9rem;font-weight:400;color:var(--texto-secundario)">
+              · IMC ${imc}
+            </span>
+          </div>
+          <div style="font-weight:700">${c.nivel}</div>
+          <div style="font-size:0.85rem;opacity:0.85">${c.recomendacao}</div>
+        </div>
+      `;
+    }
+
+    function abrirModalPeso() {
+      idPesoActual = null;
+      document.getElementById('modal-peso-titulo').textContent = '➕ Registar Peso';
+      document.getElementById('btn-apagar-peso').style.display = 'none';
+      document.getElementById('p-data').value   = new Date().toISOString().split('T')[0];
+      document.getElementById('p-peso').value   = '';
+      document.getElementById('p-altura').value = colabActual.altura_cm || '';
+      document.getElementById('p-obs').value    = '';
+      document.getElementById('preview-peso').style.display = 'none';
+      abrirModal('modal-peso');
+    }
+
+    async function editarPeso(id) {
+      const { data } = await db.from('hst_peso').select('*').eq('id', id).single();
+      if (!data) return;
+      idPesoActual = id;
+      document.getElementById('modal-peso-titulo').textContent = '✏️ Editar Registo';
+      document.getElementById('btn-apagar-peso').style.display = 'inline-flex';
+      document.getElementById('p-data').value   = data.data_medicao;
+      document.getElementById('p-peso').value   = data.peso_kg;
+      document.getElementById('p-altura').value = colabActual.altura_cm || '';
+      document.getElementById('p-obs').value    = data.observacoes || '';
+      previewPeso();
+      abrirModal('modal-peso');
+    }
+
+    function previewPeso() {
+      const peso   = parseFloat(document.getElementById('p-peso').value);
+      const altura = colabActual.altura_cm;
+      const el     = document.getElementById('preview-peso');
+      if (!peso || !altura) { el.style.display = 'none'; return; }
+      const imc = calcularIMC(peso, altura);
+      const c   = classificarIMC(imc);
+      el.style.display = 'block';
+      el.innerHTML = `
+        <div class="alerta-saude ${c.cor}" style="margin:0">
+          <div class="bold">${c.emoji} IMC ${imc} — ${c.nivel}</div>
+          <div style="font-size:0.82rem">${c.recomendacao}</div>
+        </div>
+      `;
+    }
+
+    async function guardarPeso() {
+      const data = document.getElementById('p-data').value;
+      const peso = parseFloat(document.getElementById('p-peso').value);
+
+      if (!data || !peso) {
+        mostrarToast('Data e peso são obrigatórios', 'aviso'); return;
+      }
+
+      const payload = {
+        collaborator_id: colabActual.id,
+        data_medicao:    data,
+        peso_kg:         peso,
+        observacoes:     document.getElementById('p-obs').value.trim() || null,
+        registado_por:   obterCodigoUtilizador(),
+      };
+
+      const { error } = idPesoActual
+        ? await db.from('hst_peso').update(payload).eq('id', idPesoActual)
+        : await db.from('hst_peso').insert(payload);
+
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      mostrarToast('Peso guardado!', 'sucesso');
+      fecharModal('modal-peso');
+      await carregarPeso();
+    }
+
+    async function apagarPeso() {
+      if (!confirm('Apagar este registo?')) return;
+      const { error } = await db.from('hst_peso').delete().eq('id', idPesoActual);
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      mostrarToast('Registo apagado.', 'sucesso');
+      fecharModal('modal-peso');
+      await carregarPeso();
+    }
+
+    // ── Helpers ───────────────────────────────────────────
+    function badgeClass(cor) {
+      const mapa = { verde:'verde', laranja:'laranja', vermelho:'vermelho', azul:'azul', critico:'vermelho' };
+      return mapa[cor] || 'cinza';
+    }
+
+    function labelCondicao(v) {
+      const mapa = {
+        repouso: 'Repouso', jejum: 'Jejum', apos_esforco: 'Após esforço',
+        ja_medicou: '✅ Já medicou', nao_medicou: '⏳ Não medicou', outro: 'Outro'
+      };
+      return mapa[v] || v || '—';
+    }
+
+    function abrirModal(id)  { document.getElementById(id).classList.add('aberto'); }
+    function fecharModal(id) { document.getElementById(id).classList.remove('aberto'); }
+
+    document.querySelectorAll('.modal-overlay').forEach(o => {
+      o.addEventListener('click', e => { if (e.target === o) o.classList.remove('aberto'); });
+    });
+  </script>
+
+</body>
+</html>
