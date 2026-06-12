@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DSS | Medicação</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase.js"></script>
+  <script src="auth.js"></script>
+  <script src="tema.js"></script>
+  <script src="utils.js"></script>
+  <style>
+    .med-layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+    .painel-colab {
+      background: var(--card-bg);
+      border: 1px solid var(--borda);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      position: sticky;
+      top: 80px;
+    }
+    .colab-item {
+      padding: 0.6rem 0.75rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+      border-left: 3px solid transparent;
+      margin-bottom: 0.25rem;
+    }
+    .colab-item:hover  { background: var(--bg-terciario); }
+    .colab-item.activo { background: var(--bg-terciario); border-left-color: var(--acento); }
+    .colab-item-nome   { font-size: 0.85rem; font-weight: 600; }
+    .colab-item-det    { font-size: 0.75rem; color: var(--texto-secundario); }
+    .colab-lista       { max-height: 65vh; overflow-y: auto; margin-top: 0.75rem; }
+
+    .med-card {
+      background: var(--card-bg);
+      border: 1px solid var(--borda);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      transition: border-color 0.2s;
+    }
+    .med-card:hover { border-color: var(--acento); }
+    .med-card.sem-stock { border-left: 4px solid var(--vermelho); }
+    .med-card.inactivo  { opacity: 0.55; }
+
+    .med-nome {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 0.3rem;
+    }
+    .med-info {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .med-acoes {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .sem-colab {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 300px;
+      color: var(--texto-secundario);
+      text-align: center;
+      gap: 0.75rem;
+    }
+    .sem-colab-icon { font-size: 3rem; opacity: 0.4; }
+
+    .filtros-med {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    @media (max-width: 900px) {
+      .med-layout { grid-template-columns: 1fr; }
+      .painel-colab { position: static; }
+      .colab-lista  { max-height: 200px; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav id="navbar"></nav>
+
+  <main class="pagina">
+    <div class="pagina-header">
+      <h1 class="pagina-titulo">💊 Medicação e Tratamentos</h1>
+      <p class="pagina-subtitulo">Controlo de medicamentos activos, stock e histórico</p>
+    </div>
+
+    <div class="med-layout">
+
+      <!-- ── Painel esquerdo ── -->
+      <div class="painel-colab">
+        <input type="text" id="pesq-colab" class="pesquisa-input" style="width:100%"
+          placeholder="🔍 Pesquisar colaborador..." oninput="filtrarColabs()" />
+
+        <!-- Alerta geral sem stock -->
+        <div id="alerta-sem-stock-geral" style="display:none;margin-top:0.75rem"></div>
+
+        <div class="colab-lista" id="colab-lista">
+          <div style="text-align:center;padding:1rem;color:var(--texto-secundario);font-size:0.85rem">
+            A carregar...
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Painel direito ── -->
+      <div id="painel-med">
+
+        <div class="sem-colab" id="sem-colab">
+          <div class="sem-colab-icon">💊</div>
+          <div>Selecciona um colaborador<br>para ver a medicação</div>
+        </div>
+
+        <div id="conteudo-med" style="display:none">
+
+          <!-- Cabeçalho colaborador -->
+          <div class="card mb-3" id="card-colab-header"></div>
+
+          <!-- Filtros -->
+          <div class="filtros-med">
+            <button class="btn btn-primario btn-sm" onclick="abrirModalNovo()">
+              ➕ Nova Medicação
+            </button>
+            <label class="flex items-center gap-1" style="cursor:pointer;font-size:0.85rem">
+              <input type="checkbox" id="mostrar-inativos" onchange="renderMedicacoes()" />
+              Mostrar histórico inactivo
+            </label>
+          </div>
+
+          <!-- Lista de medicações -->
+          <div id="lista-medicacoes"></div>
+
+          <div id="sem-medicacao" style="display:none;text-align:center;padding:2rem;
+            color:var(--texto-secundario)">
+            Nenhuma medicação registada para este colaborador.
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ══ MODAL MEDICAÇÃO ══ -->
+  <div class="modal-overlay" id="modal-med">
+    <div class="modal" style="max-width:540px">
+      <div class="modal-header">
+        <span class="modal-titulo" id="modal-med-titulo">➕ Nova Medicação</span>
+        <button class="modal-fechar" onclick="fecharModal('modal-med')">✕</button>
+      </div>
+      <div class="modal-corpo">
+
+        <div class="form-grupo">
+          <label class="form-label">Nome do Medicamento *</label>
+          <input type="text" id="m-medicamento" class="form-input"
+            placeholder="Ex: Amlodipina, Metformina, Captopril..." />
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Dosagem</label>
+            <input type="text" id="m-dosagem" class="form-input"
+              placeholder="Ex: 5mg, 500mg, 10mg/dia" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Frequência</label>
+            <input type="text" id="m-frequencia" class="form-input"
+              placeholder="Ex: 1x dia manhã, 2x dia" />
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Data de Início</label>
+            <input type="date" id="m-inicio" class="form-input" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Data de Fim</label>
+            <input type="date" id="m-fim" class="form-input" />
+            <span style="font-size:0.75rem;color:var(--texto-secundario)">
+              Deixa vazio se for uso contínuo
+            </span>
+          </div>
+        </div>
+
+        <div class="form-grupo">
+          <label class="form-label">Prescrito por</label>
+          <input type="text" id="m-prescrito" class="form-input"
+            placeholder="Nome do médico ou posto de saúde" />
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Stock actual *</label>
+            <select id="m-stock" class="form-select">
+              <option value="true">✅ Tem stock</option>
+              <option value="false">❌ Sem stock — pedir</option>
+            </select>
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Estado</label>
+            <select id="m-ativo" class="form-select">
+              <option value="true">Activo — em uso</option>
+              <option value="false">Inactivo — histórico</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grupo">
+          <label class="form-label">Observações</label>
+          <textarea id="m-obs" class="form-textarea" rows="2"
+            placeholder="Ex: Tomar com refeição, evitar álcool..."></textarea>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secundario" onclick="fecharModal('modal-med')">Cancelar</button>
+        <button class="btn btn-perigo btn-sm" id="btn-apagar-med"
+          onclick="confirmarApagar()" style="display:none">🗑 Apagar</button>
+        <button class="btn btn-primario" onclick="guardarMedicacao()">💾 Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    let colaboradores     = [];
+    let colaborsFiltrados = [];
+    let colabActual       = null;
+    let medicacoes        = [];
+    let idMedActual       = null;
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      exigirAuth();
+      renderNavbar('medicacao');
+      await carregarColaboradores();
+      await carregarAlertaGeralStock();
+    });
+
+    // ── Colaboradores ─────────────────────────────────────
+    async function carregarColaboradores() {
+      const { data } = await db
+        .from('collaborators')
+        .select('id, code, name, categoria, doenca_cronica')
+        .eq('active', true)
+        .order('name');
+
+      colaboradores     = data || [];
+      colaborsFiltrados = [...colaboradores];
+      renderColabs();
+    }
+
+    function renderColabs() {
+      const lista = document.getElementById('colab-lista');
+      if (colaborsFiltrados.length === 0) {
+        lista.innerHTML = `<div style="text-align:center;padding:1rem;
+          color:var(--texto-secundario);font-size:0.85rem">Nenhum resultado.</div>`;
+        return;
+      }
+      lista.innerHTML = colaborsFiltrados.map(c => `
+        <div class="colab-item ${colabActual?.id === c.id ? 'activo' : ''}"
+          onclick='seleccionarColab(${JSON.stringify(c)})'>
+          <div class="colab-item-nome">${c.name}</div>
+          <div class="colab-item-det">
+            ${c.code ?? '—'} · ${c.categoria ?? '—'}
+            ${c.doenca_cronica
+              ? `· <span style="color:var(--laranja)">${c.doenca_cronica}</span>`
+              : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function filtrarColabs() {
+      const t = document.getElementById('pesq-colab').value.toLowerCase();
+      colaborsFiltrados = colaboradores.filter(c =>
+        (c.name || '').toLowerCase().includes(t) ||
+        (c.code || '').toLowerCase().includes(t) ||
+        (c.categoria || '').toLowerCase().includes(t)
+      );
+      renderColabs();
+    }
+
+    // ── Alerta geral sem stock ────────────────────────────
+    async function carregarAlertaGeralStock() {
+      const { data } = await db
+        .from('hst_medicacao')
+        .select('medicamento, collaborators(name, code)')
+        .eq('ativo', true)
+        .eq('tem_stock', false);
+
+      const el = document.getElementById('alerta-sem-stock-geral');
+      if (!data || data.length === 0) { el.style.display = 'none'; return; }
+
+      el.style.display = 'block';
+      el.innerHTML = `
+        <div style="background:rgba(239,68,68,0.1);border:1px solid var(--vermelho);
+          border-radius:8px;padding:0.75rem;font-size:0.8rem">
+          <div style="font-weight:700;color:var(--vermelho);margin-bottom:0.4rem">
+            🚨 ${data.length} medicação(ões) sem stock
+          </div>
+          ${data.map(m => `
+            <div style="color:var(--texto-secundario)">
+              · ${m.collaborators?.name ?? '—'} — <strong>${m.medicamento}</strong>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // ── Seleccionar colaborador ───────────────────────────
+    async function seleccionarColab(c) {
+      colabActual = c;
+      document.getElementById('sem-colab').style.display    = 'none';
+      document.getElementById('conteudo-med').style.display = 'block';
+      renderColabs();
+      renderHeaderColab();
+      await carregarMedicacoes();
+    }
+
+    function renderHeaderColab() {
+      const c = colabActual;
+      document.getElementById('card-colab-header').innerHTML = `
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <div class="bold" style="font-size:1.05rem">${c.name}</div>
+            <div class="texto-muted" style="font-size:0.85rem">
+              ${c.code ?? '—'} · ${c.categoria ?? '—'}
+              ${c.doenca_cronica
+                ? `· <span style="color:var(--laranja)">⚕ ${c.doenca_cronica}</span>`
+                : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ── Carregar medicações ───────────────────────────────
+    async function carregarMedicacoes() {
+      const { data, error } = await db
+        .from('hst_medicacao')
+        .select('*')
+        .eq('collaborator_id', colabActual.id)
+        .order('ativo', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      medicacoes = data || [];
+      renderMedicacoes();
+    }
+
+    function renderMedicacoes() {
+      const mostrarInativos = document.getElementById('mostrar-inativos').checked;
+      const lista = document.getElementById('lista-medicacoes');
+      const semMsg = document.getElementById('sem-medicacao');
+
+      const filtradas = medicacoes.filter(m => mostrarInativos || m.ativo);
+
+      if (filtradas.length === 0) {
+        lista.innerHTML = '';
+        semMsg.style.display = 'block';
+        return;
+      }
+      semMsg.style.display = 'none';
+
+      // Separar activas e inactivas
+      const activas   = filtradas.filter(m => m.ativo);
+      const inactivas = filtradas.filter(m => !m.ativo);
+
+      let html = '';
+
+      if (activas.length > 0) {
+        html += `<div class="form-label mb-2" style="color:var(--acento)">
+          💊 Medicação Activa (${activas.length})</div>`;
+        html += activas.map(m => renderCardMed(m)).join('');
+      }
+
+      if (inactivas.length > 0 && mostrarInativos) {
+        html += `<div class="form-label mb-2 mt-2" style="color:var(--texto-secundario)">
+          📋 Histórico Inactivo (${inactivas.length})</div>`;
+        html += inactivas.map(m => renderCardMed(m)).join('');
+      }
+
+      lista.innerHTML = html;
+    }
+
+    function renderCardMed(m) {
+      const semStock  = !m.tem_stock;
+      const inactivo  = !m.ativo;
+      const usoCont   = !m.data_fim;
+
+      // Período de uso
+      let periodo = '';
+      if (m.data_inicio && m.data_fim) {
+        periodo = `${formatarData(m.data_inicio)} → ${formatarData(m.data_fim)}`;
+      } else if (m.data_inicio) {
+        periodo = `Desde ${formatarData(m.data_inicio)} · Uso contínuo`;
+      } else if (usoCont) {
+        periodo = 'Uso contínuo';
+      }
+
+      return `
+        <div class="med-card ${semStock ? 'sem-stock' : ''} ${inactivo ? 'inactivo' : ''}">
+          <div class="med-nome">
+            ${m.medicamento}
+            ${semStock ? '<span class="badge badge-vermelho" style="margin-left:0.5rem">❌ Sem stock</span>' : '<span class="badge badge-verde" style="margin-left:0.5rem">✅ Com stock</span>'}
+            ${inactivo ? '<span class="badge badge-cinza" style="margin-left:0.25rem">Inactivo</span>' : ''}
+          </div>
+          <div class="med-info">
+            ${m.dosagem     ? `<span class="badge badge-cinza">💉 ${m.dosagem}</span>` : ''}
+            ${m.frequencia  ? `<span class="badge badge-cinza">🔁 ${m.frequencia}</span>` : ''}
+            ${m.prescrito_por ? `<span class="badge badge-cinza">👨‍⚕️ ${m.prescrito_por}</span>` : ''}
+            ${periodo ? `<span class="badge badge-cinza">📅 ${periodo}</span>` : ''}
+          </div>
+          ${m.observacoes ? `
+            <div style="font-size:0.8rem;color:var(--texto-secundario);margin-bottom:0.75rem;
+              padding:0.5rem;background:var(--bg-terciario);border-radius:6px">
+              📝 ${m.observacoes}
+            </div>
+          ` : ''}
+          <div class="med-acoes">
+            <button class="btn btn-secundario btn-sm" onclick="abrirModalEditar(${m.id})">
+              ✏️ Editar
+            </button>
+            ${semStock && m.ativo ? `
+              <button class="btn btn-primario btn-sm"
+                onclick="marcarComStock(${m.id})">
+                ✅ Stock reposto
+              </button>
+            ` : ''}
+            ${!semStock && m.ativo ? `
+              <button class="btn btn-perigo btn-sm"
+                onclick="marcarSemStock(${m.id})">
+                ❌ Stock esgotado
+              </button>
+            ` : ''}
+            ${m.ativo ? `
+              <button class="btn btn-secundario btn-sm"
+                onclick="toggleAtivo(${m.id}, false)">
+                📋 Mover p/ histórico
+              </button>
+            ` : `
+              <button class="btn btn-secundario btn-sm"
+                onclick="toggleAtivo(${m.id}, true)">
+                ♻️ Reactivar
+              </button>
+            `}
+          </div>
+        </div>
+      `;
+    }
+
+    // ── Acções rápidas de stock ───────────────────────────
+    async function marcarComStock(id) {
+      await db.from('hst_medicacao').update({ tem_stock: true }).eq('id', id);
+      mostrarToast('Stock actualizado!', 'sucesso');
+      await carregarMedicacoes();
+      await carregarAlertaGeralStock();
+    }
+
+    async function marcarSemStock(id) {
+      await db.from('hst_medicacao').update({ tem_stock: false }).eq('id', id);
+      mostrarToast('Marcado sem stock.', 'aviso');
+      await carregarMedicacoes();
+      await carregarAlertaGeralStock();
+    }
+
+    async function toggleAtivo(id, estado) {
+      await db.from('hst_medicacao').update({ ativo: estado }).eq('id', id);
+      mostrarToast(estado ? 'Medicação reactivada.' : 'Movida para histórico.', 'sucesso');
+      await carregarMedicacoes();
+    }
+
+    // ── Modal novo ────────────────────────────────────────
+    function abrirModalNovo() {
+      idMedActual = null;
+      document.getElementById('modal-med-titulo').textContent = '➕ Nova Medicação';
+      document.getElementById('btn-apagar-med').style.display = 'none';
+      // Limpar
+      ['m-medicamento','m-dosagem','m-frequencia','m-inicio','m-fim',
+       'm-prescrito','m-obs'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      document.getElementById('m-stock').value = 'true';
+      document.getElementById('m-ativo').value = 'true';
+      document.getElementById('m-inicio').value = dataHoje();
+      abrirModal('modal-med');
+    }
+
+    // ── Modal editar ──────────────────────────────────────
+    function abrirModalEditar(id) {
+      const m = medicacoes.find(x => x.id === id);
+      if (!m) return;
+      idMedActual = id;
+      document.getElementById('modal-med-titulo').textContent = `✏️ Editar — ${m.medicamento}`;
+      document.getElementById('btn-apagar-med').style.display = 'inline-flex';
+
+      document.getElementById('m-medicamento').value = m.medicamento ?? '';
+      document.getElementById('m-dosagem').value     = m.dosagem ?? '';
+      document.getElementById('m-frequencia').value  = m.frequencia ?? '';
+      document.getElementById('m-inicio').value      = m.data_inicio ?? '';
+      document.getElementById('m-fim').value         = m.data_fim ?? '';
+      document.getElementById('m-prescrito').value   = m.prescrito_por ?? '';
+      document.getElementById('m-stock').value       = m.tem_stock ? 'true' : 'false';
+      document.getElementById('m-ativo').value       = m.ativo ? 'true' : 'false';
+      document.getElementById('m-obs').value         = m.observacoes ?? '';
+
+      abrirModal('modal-med');
+    }
+
+    // ── Guardar ───────────────────────────────────────────
+    async function guardarMedicacao() {
+      const medicamento = document.getElementById('m-medicamento').value.trim();
+      if (!medicamento) {
+        mostrarToast('O nome do medicamento é obrigatório', 'aviso'); return;
+      }
+
+      const payload = {
+        collaborator_id: colabActual.id,
+        medicamento,
+        dosagem:      document.getElementById('m-dosagem').value.trim() || null,
+        frequencia:   document.getElementById('m-frequencia').value.trim() || null,
+        data_inicio:  document.getElementById('m-inicio').value || null,
+        data_fim:     document.getElementById('m-fim').value || null,
+        prescrito_por:document.getElementById('m-prescrito').value.trim() || null,
+        tem_stock:    document.getElementById('m-stock').value === 'true',
+        ativo:        document.getElementById('m-ativo').value === 'true',
+        observacoes:  document.getElementById('m-obs').value.trim() || null,
+        registado_por: obterCodigoUtilizador(),
+        updated_at:   new Date().toISOString(),
+      };
+
+      const { error } = idMedActual
+        ? await db.from('hst_medicacao').update(payload).eq('id', idMedActual)
+        : await db.from('hst_medicacao').insert(payload);
+
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      mostrarToast(idMedActual ? 'Medicação actualizada!' : 'Medicação adicionada!', 'sucesso');
+      fecharModal('modal-med');
+      await carregarMedicacoes();
+      await carregarAlertaGeralStock();
+    }
+
+    // ── Apagar ────────────────────────────────────────────
+    function confirmarApagar() {
+      const m = medicacoes.find(x => x.id === idMedActual);
+      if (!m) return;
+      if (!confirm(`Apagar permanentemente "${m.medicamento}"?`)) return;
+      apagarMedicacao();
+    }
+
+    async function apagarMedicacao() {
+      const { error } = await db.from('hst_medicacao').delete().eq('id', idMedActual);
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      mostrarToast('Medicação apagada.', 'sucesso');
+      fecharModal('modal-med');
+      await carregarMedicacoes();
+      await carregarAlertaGeralStock();
+    }
+
+    // ── Modais ────────────────────────────────────────────
+    function abrirModal(id)  { document.getElementById(id).classList.add('aberto'); }
+    function fecharModal(id) { document.getElementById(id).classList.remove('aberto'); }
+
+    document.querySelectorAll('.modal-overlay').forEach(o => {
+      o.addEventListener('click', e => { if (e.target === o) o.classList.remove('aberto'); });
+    });
+  </script>
+
+</body>
+</html>
