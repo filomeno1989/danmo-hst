@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DSS | Portal HST</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase.js"></script>
+  <script src="auth.js"></script>
+  <script src="tema.js"></script>
+  <script src="utils.js"></script>
+</head>
+<body>
+
+  <nav id="navbar"></nav>
+
+  <main class="pagina">
+
+    <!-- Boas-vindas -->
+    <section class="boas-vindas">
+      <div class="boas-vindas-logo">🏥</div>
+      <h1 class="boas-vindas-titulo">Portal HST — Danmo Service System</h1>
+      <p class="boas-vindas-subtitulo">
+        Sistema integrado de saúde, segurança e gestão de colaboradores.<br>
+        Porto da Beira · Sofala · Moçambique
+      </p>
+      <div class="boas-vindas-utilizador">
+        Sessão iniciada como <strong id="nome-utilizador">—</strong> &nbsp;·&nbsp; <span id="data-hoje">—</span>
+      </div>
+
+      <!-- Atalhos rápidos -->
+      <div class="atalhos-grid">
+        <a href="ficha.html" class="atalho-card">
+          <span class="atalho-icon">👤</span>
+          <span class="atalho-label">Fichas</span>
+          <span class="atalho-desc">Dados dos colaboradores</span>
+        </a>
+        <a href="saude.html" class="atalho-card">
+          <span class="atalho-icon">❤️</span>
+          <span class="atalho-label">Saúde</span>
+          <span class="atalho-desc">Tensão · Glicemia · Peso</span>
+        </a>
+        <a href="medicacao.html" class="atalho-card">
+          <span class="atalho-icon">💊</span>
+          <span class="atalho-label">Medicação</span>
+          <span class="atalho-desc">Tratamentos activos</span>
+        </a>
+        <a href="acidentes.html" class="atalho-card">
+          <span class="atalho-icon">⚠️</span>
+          <span class="atalho-label">Acidentes</span>
+          <span class="atalho-desc">Registo de ocorrências</span>
+        </a>
+        <a href="ferias.html" class="atalho-card">
+          <span class="atalho-icon">🏖️</span>
+          <span class="atalho-label">Férias</span>
+          <span class="atalho-desc">Planeamento e controlo</span>
+        </a>
+        <a href="relatorios.html" class="atalho-card">
+          <span class="atalho-icon">📄</span>
+          <span class="atalho-label">Relatórios</span>
+          <span class="atalho-desc">Fichas imprimíveis</span>
+        </a>
+      </div>
+    </section>
+
+    <hr class="sep" />
+
+    <!-- Stats gerais -->
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card">
+        <span class="stat-label">Total Colaboradores</span>
+        <span class="stat-valor" id="stat-total">—</span>
+        <span class="stat-detalhe">activos no sistema</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Com Hipertensão</span>
+        <span class="stat-valor texto-vermelho" id="stat-hiper">—</span>
+        <span class="stat-detalhe">monitorização diária</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Com Diabetes</span>
+        <span class="stat-valor texto-laranja" id="stat-diab">—</span>
+        <span class="stat-detalhe">controlo semestral</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Medicações Activas</span>
+        <span class="stat-valor texto-acento" id="stat-med">—</span>
+        <span class="stat-detalhe">em tratamento</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Sem Stock</span>
+        <span class="stat-valor texto-vermelho" id="stat-sem-stock">—</span>
+        <span class="stat-detalhe">medicação a pedir</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Medições Hoje</span>
+        <span class="stat-valor texto-verde" id="stat-hoje">—</span>
+        <span class="stat-detalhe">tensão registada</span>
+      </div>
+    </div>
+
+    <!-- Alertas críticos de tensão -->
+    <div class="card mb-3" id="card-alertas" style="display:none">
+      <div class="card-titulo">🚨 Alertas de Tensão — Última Medição</div>
+      <div class="alertas-grid" id="lista-alertas"></div>
+    </div>
+
+    <!-- Medicação a pedir -->
+    <div class="card mb-3" id="card-sem-stock" style="display:none">
+      <div class="card-titulo">💊 Medicação Sem Stock — Pedir ao Posto de Saúde</div>
+      <div class="tabela-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Colaborador</th>
+              <th>Medicamento</th>
+              <th>Dosagem</th>
+              <th>Frequência</th>
+              <th>Prescrito por</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-sem-stock"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Selector de tema -->
+    <div class="card">
+      <div class="card-titulo">🎨 Aparência</div>
+      <div id="temas-selector" class="temas-container"></div>
+    </div>
+
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      const sessao = exigirAuth();
+      renderNavbar('dashboard');
+      renderSelectorTema('temas-selector');
+
+      // Info utilizador
+      document.getElementById('nome-utilizador').textContent =
+        `${sessao.nome} (${sessao.codigo})`;
+      document.getElementById('data-hoje').textContent =
+        new Date().toLocaleDateString('pt-MZ', {
+          weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+        });
+
+      await carregarStats();
+      await carregarAlertasTensao();
+      await carregarSemStock();
+    });
+
+    async function carregarStats() {
+      try {
+        // Total activos
+        const { count: total } = await db
+          .from('collaborators')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'Atico');
+        document.getElementById('stat-total').textContent = total ?? '—';
+
+        // Hipertensos
+        const { count: hiper } = await db
+          .from('collaborators')
+          .select('*', { count: 'exact', head: true })
+          .ilike('doenca_cronica', '%hipertensão%');
+        document.getElementById('stat-hiper').textContent = hiper ?? '0';
+
+        // Diabéticos
+        const { count: diab } = await db
+          .from('collaborators')
+          .select('*', { count: 'exact', head: true })
+          .ilike('doenca_cronica', '%diabet%');
+        document.getElementById('stat-diab').textContent = diab ?? '0';
+
+        // Medicações activas
+        const { count: med } = await db
+          .from('hst_medicacao')
+          .select('*', { count: 'exact', head: true })
+          .eq('ativo', true);
+        document.getElementById('stat-med').textContent = med ?? '0';
+
+        // Sem stock
+        const { count: semStock } = await db
+          .from('hst_medicacao')
+          .select('*', { count: 'exact', head: true })
+          .eq('ativo', true)
+          .eq('tem_stock', false);
+        document.getElementById('stat-sem-stock').textContent = semStock ?? '0';
+
+        // Medições hoje
+        const hoje = dataHoje();
+        const { count: hoje_med } = await db
+          .from('hst_tensao')
+          .select('*', { count: 'exact', head: true })
+          .gte('data_medicao', hoje + 'T00:00:00')
+          .lte('data_medicao', hoje + 'T23:59:59');
+        document.getElementById('stat-hoje').textContent = hoje_med ?? '0';
+
+      } catch (e) {
+        console.error('Erro ao carregar stats:', e);
+      }
+    }
+
+    async function carregarAlertasTensao() {
+      try {
+        // Última medição de cada colaborador com tensão preocupante
+        const { data } = await db
+          .from('hst_tensao')
+          .select(`
+            id, sistolica, diastolica, pulsacao, data_medicao,
+            collaborators (id, nome, funcao)
+          `)
+          .order('data_medicao', { ascending: false })
+          .limit(100);
+
+        if (!data || data.length === 0) return;
+
+        // Agrupar por colaborador — só a última medição
+        const porColab = {};
+        data.forEach(m => {
+          const cid = m.collaborators?.id;
+          if (!cid || porColab[cid]) return;
+          porColab[cid] = m;
+        });
+
+        // Filtrar só os que não estão normais
+        const alertas = Object.values(porColab).filter(m => {
+          const c = classificarTensao(m.sistolica, m.diastolica);
+          return c.cor !== 'verde';
+        });
+
+        if (alertas.length === 0) return;
+
+        const card = document.getElementById('card-alertas');
+        const lista = document.getElementById('lista-alertas');
+        card.style.display = 'block';
+
+        lista.innerHTML = alertas.map(m => {
+          const c = classificarTensao(m.sistolica, m.diastolica);
+          return `
+            <div class="alerta-card ${c.cor}">
+              <div class="alerta-nivel">${c.emoji} ${c.nivel}</div>
+              <div class="alerta-nome">${m.collaborators?.nome ?? '—'}</div>
+              <div class="alerta-valor">
+                ${m.sistolica}/${m.diastolica} mmHg
+                ${m.pulsacao ? `· ${m.pulsacao} bpm` : ''}
+                · ${formatarDataHora(m.data_medicao)}
+              </div>
+              <div class="alerta-rec">${c.recomendacao}</div>
+            </div>
+          `;
+        }).join('');
+
+      } catch (e) {
+        console.error('Erro alertas tensão:', e);
+      }
+    }
+
+    async function carregarSemStock() {
+      try {
+        const { data } = await db
+          .from('hst_medicacao')
+          .select(`
+            medicamento, dosagem, frequencia, prescrito_por,
+            collaborators (nome)
+          `)
+          .eq('ativo', true)
+          .eq('tem_stock', false)
+          .order('medicamento');
+
+        if (!data || data.length === 0) return;
+
+        const card = document.getElementById('card-sem-stock');
+        const tabela = document.getElementById('tabela-sem-stock');
+        card.style.display = 'block';
+
+        tabela.innerHTML = data.map(m => `
+          <tr>
+            <td>${m.collaborators?.nome ?? '—'}</td>
+            <td><strong>${m.medicamento}</strong></td>
+            <td>${m.dosagem ?? '—'}</td>
+            <td>${m.frequencia ?? '—'}</td>
+            <td>${m.prescrito_por ?? '—'}</td>
+          </tr>
+        `).join('');
+
+      } catch (e) {
+        console.error('Erro sem stock:', e);
+      }
+    }
+  </script>
+
+</body>
+</html>
