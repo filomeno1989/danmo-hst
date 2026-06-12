@@ -289,10 +289,9 @@
       await carregarColaboradores();
     });
 
-    // ── Carregar Puro (Evita conflitos com funções globais externas) ──
+    // ── Carregar Puro usando a variável "db" correta do projeto ──
     async function carregarColaboradores() {
-      // Usamos diretamente o cliente Supabase sem filtros complexos que possam invocar chaves antigas
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('collaborators')
         .select('*');
 
@@ -301,7 +300,7 @@
         return; 
       }
 
-      // Fazemos a ordenação localmente no front-end para blindar a API
+      // Ordenação local para garantir robustez
       colaboradores = data || [];
       colaboradores.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
       
@@ -587,9 +586,9 @@
 
       let error;
       if (idActual) {
-        ({ error } = await supabase.from('collaborators').update(payload).eq('id', idActual));
+        ({ error } = await db.from('collaborators').update(payload).eq('id', idActual));
       } else {
-        ({ error } = await supabase.from('collaborators').insert(payload));
+        ({ error } = await db.from('collaborators').insert(payload));
       }
 
       if (error) {
@@ -611,7 +610,7 @@
     }
 
     async function apagarColaborador() {
-      const { error } = await supabase.from('collaborators').delete().eq('id', idActual);
+      const { error } = await db.from('collaborators').delete().eq('id', idActual);
       if (error) { mostrarToast('Erro ao apagar: ' + error.message, 'erro'); return; }
       mostrarToast('Colaborador apagado.', 'sucesso');
       fecharModal('modal-ficha');
@@ -672,7 +671,7 @@
             ${linha('Tempo antes da Danmo', tempoAntes)}
             ${linha('Tempo Total no Grupo', `<strong class="texto-acento">${tempoTotal}</strong>`)}
           ` : ''}
-          ${c.status === 'Inativo' ? linha('Data Desvinculamento', formatarData(c.data_inativo)) : ''}
+          ${c.status === 'Inativo' ? inline('Data Desvinculamento', formatarData(c.data_inativo)) : ''}
         </div>
 
         <hr class="sep" />
