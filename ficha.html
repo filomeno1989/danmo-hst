@@ -309,15 +309,10 @@
     async function carregarColaboradores() {
       const { data, error } = await db
         .from('collaborators')
-        .select()
-        .order('nome', { ascending: true });
+        .select('*')
+        .order('nome');
 
-      if (error) {
-        console.error('Erro Supabase:', error);
-        mostrarToast('Erro ao carregar colaboradores: ' + error.message, 'erro');
-        document.getElementById('subtitulo-contagem').textContent = 'Erro ao carregar';
-        return;
-      }
+      if (error) { mostrarToast('Erro ao carregar colaboradores', 'erro'); return; }
 
       colaboradores = data || [];
       colaboradoresFiltrados = [...colaboradores];
@@ -354,7 +349,7 @@
 
         return `
           <tr>
-            <td class="bold texto-acento">${c['código'] ?? '—'}</td>
+            <td class="bold texto-acento">${c.codigo ?? '—'}</td>
             <td>
               <div class="bold">${c.nome}</div>
               ${c.doenca_cronica ? `<div style="font-size:0.75rem;color:var(--texto-secundario)">${c.doenca_cronica}</div>` : ''}
@@ -385,7 +380,7 @@
       colaboradoresFiltrados = colaboradores.filter(c => {
         const matchTermo = !termo ||
           (c.nome || '').toLowerCase().includes(termo) ||
-          String(c['código'] || '').includes(termo) ||
+          String(c.codigo || '').includes(termo) ||
           (c.funcao || '').toLowerCase().includes(termo);
         const matchStatus = !status || c.status === status;
         const matchVinculo = !vinculo || c.tipo_vinculo === vinculo;
@@ -471,7 +466,7 @@
     }
 
     function preencherFormulario(c) {
-      document.getElementById('f-codigo').value       = c['código'] ?? '';
+      document.getElementById('f-codigo').value       = c.codigo ?? '';
       document.getElementById('f-nome').value         = c.nome ?? '';
       document.getElementById('f-funcao').value       = c.funcao ?? '';
       document.getElementById('f-naturalidade').value = c.naturalidade ?? '';
@@ -571,7 +566,7 @@
       }
 
       const payload = {
-        'código':             parseInt(codigo),
+        codigo:               parseInt(codigo),
         nome:                 nome,
         funcao:               funcao,
         naturalidade:         document.getElementById('f-naturalidade').value.trim() || null,
@@ -651,7 +646,7 @@
         <div class="flex justify-between items-center mb-2">
           <div>
             <span class="bold" style="font-size:1.1rem">${c.nome}</span>
-            <span class="texto-muted" style="margin-left:0.5rem">Nº ${c['código'] ?? '—'}</span>
+            <span class="texto-muted" style="margin-left:0.5rem">Nº ${c.codigo ?? '—'}</span>
           </div>
           ${statusBadge}
         </div>
