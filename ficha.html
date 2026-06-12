@@ -289,18 +289,25 @@
       await carregarColaboradores();
     });
 
-    // ── Carregar ──────────────────────────────
+    // ── Carregar Puro (Evita conflitos com funções globais externas) ──
     async function carregarColaboradores() {
-      const { data, error } = await db
+      // Usamos diretamente o cliente Supabase sem filtros complexos que possam invocar chaves antigas
+      const { data, error } = await supabase
         .from('collaborators')
-        .select('*')
-        .order('nome');
+        .select('*');
 
-      if (error) { mostrarToast('Erro ao carregar colaboradores', 'erro'); return; }
+      if (error) { 
+        mostrarToast('Erro ao carregar colaboradores: ' + error.message, 'erro'); 
+        return; 
+      }
 
+      // Fazemos a ordenação localmente no front-end para blindar a API
       colaboradores = data || [];
+      colaboradores.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+      
       colaboradoresFiltrados = [...colaboradores];
       renderTabela();
+      
       document.getElementById('subtitulo-contagem').textContent =
         `${colaboradores.filter(c => c.status === 'Atico').length} activos · ${colaboradores.filter(c => c.status === 'Inativo').length} inativos`;
     }
@@ -472,7 +479,6 @@
       document.getElementById('f-altura').value       = c.altura_cm ?? '';
       document.getElementById('f-observacoes').value  = c.observacoes_gerais ?? '';
 
-      // Vínculo
       const vinculo = c.tipo_vinculo || 'contratado';
       document.querySelector(`input[name="tipo_vinculo"][value="${vinculo}"]`).checked = true;
       toggleTransferido();
@@ -500,7 +506,6 @@
       document.getElementById('f-idade').value = nasc ? calcularIdade(nasc) + ' anos' : '';
     }
 
-    // Função local para amparar a lógica caso falte no utils.js
     function calcularIdade(dataNasc) {
       const hoje = new Date();
       const nasc = new Date(dataNasc);
@@ -516,16 +521,12 @@
       const dataFim  = document.getElementById('f-data-inativo').value || null;
       const isTransf = document.querySelector('input[name="tipo_vinculo"]:checked')?.value === 'transferido';
 
-      // Tempo na Danmo
       if (admDanmo) {
         document.getElementById('f-tempo-danmo').value = calcularTempoLongo(admDanmo, dataFim);
       }
 
-      // Tempo grupo (só transferidos)
       if (isTransf && admGrupo && admDanmo) {
-        // Tempo antes da Danmo
         document.getElementById('f-tempo-grupo-antes').value = calcularTempoLongo(admGrupo, admDanmo);
-        // Tempo total no grupo
         document.getElementById('f-tempo-total').value = calcularTempoLongo(admGrupo, dataFim);
       }
     }
@@ -586,9 +587,9 @@
 
       let error;
       if (idActual) {
-        ({ error } = await db.from('collaborators').update(payload).eq('id', idActual));
+        ({ error } = await supabase.from('collaborators').update(payload).eq('id', idActual));
       } else {
-        ({ error } = await db.from('collaborators').insert(payload));
+        ({ error } = await supabase.from('collaborators').insert(payload));
       }
 
       if (error) {
@@ -610,7 +611,7 @@
     }
 
     async function apagarColaborador() {
-      const { error } = await db.from('collaborators').delete().eq('id', idActual);
+      const { error } = await supabase.from('collaborators').delete().eq('id', idActual);
       if (error) { mostrarToast('Erro ao apagar: ' + error.message, 'erro'); return; }
       mostrarToast('Colaborador apagado.', 'sucesso');
       fecharModal('modal-ficha');
