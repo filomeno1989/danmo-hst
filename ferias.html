@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DSS | Férias</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase.js"></script>
+  <script src="auth.js"></script>
+  <script src="tema.js"></script>
+  <script src="utils.js"></script>
+  <style>
+    .ferias-layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+    .painel-colab {
+      background: var(--card-bg);
+      border: 1px solid var(--borda);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      position: sticky;
+      top: 80px;
+    }
+    .colab-item {
+      padding: 0.6rem 0.75rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+      border-left: 3px solid transparent;
+      margin-bottom: 0.25rem;
+    }
+    .colab-item:hover  { background: var(--bg-terciario); }
+    .colab-item.activo { background: var(--bg-terciario); border-left-color: var(--acento); }
+    .colab-item-nome   { font-size: 0.85rem; font-weight: 600; }
+    .colab-item-det    { font-size: 0.75rem; color: var(--texto-secundario); }
+    .colab-lista       { max-height: 60vh; overflow-y: auto; margin-top: 0.75rem; }
+
+    .sem-colab {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; min-height: 300px;
+      color: var(--texto-secundario); text-align: center; gap: 0.75rem;
+    }
+    .sem-colab-icon { font-size: 3rem; opacity: 0.4; }
+
+    /* Cards de férias */
+    .ferias-card {
+      background: var(--card-bg);
+      border: 1px solid var(--borda);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 0.85rem;
+      border-left: 4px solid var(--borda);
+      transition: border-color 0.2s;
+    }
+    .ferias-card.previsto   { border-left-color: var(--texto-secundario); }
+    .ferias-card.confirmado { border-left-color: var(--azul); }
+    .ferias-card.gozado     { border-left-color: var(--verde); }
+    .ferias-card.adiado     { border-left-color: var(--laranja); }
+    .ferias-card.cancelado  { border-left-color: var(--vermelho); opacity: 0.6; }
+
+    .ferias-ano {
+      font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--texto-secundario); margin-bottom: 0.25rem;
+    }
+    .ferias-periodo { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .ferias-badges  { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.65rem; }
+    .ferias-acoes   { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+    /* Calendário de visão geral */
+    .cal-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .cal-mes {
+      background: var(--card-bg);
+      border: 1px solid var(--borda);
+      border-radius: 8px;
+      padding: 0.75rem;
+      text-align: center;
+    }
+    .cal-mes-nome {
+      font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--texto-secundario); margin-bottom: 0.4rem;
+    }
+    .cal-mes-count {
+      font-size: 1.4rem; font-weight: 700; color: var(--acento);
+    }
+    .cal-mes-nomes {
+      font-size: 0.7rem; color: var(--texto-secundario); margin-top: 0.25rem;
+      line-height: 1.5;
+    }
+    .cal-mes.tem-ferias { border-color: var(--acento); }
+
+    @media (max-width: 900px) {
+      .ferias-layout { grid-template-columns: 1fr; }
+      .painel-colab { position: static; }
+      .colab-lista  { max-height: 200px; }
+      .cal-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+  <nav id="navbar"></nav>
+
+  <main class="pagina">
+    <div class="pagina-header">
+      <h1 class="pagina-titulo">🏖️ Controlo de Férias</h1>
+      <p class="pagina-subtitulo">Planeamento e histórico de férias por colaborador</p>
+    </div>
+
+    <div class="ferias-layout">
+
+      <!-- ── Painel esquerdo ── -->
+      <div class="painel-colab">
+        <input type="text" id="pesq-colab" class="pesquisa-input" style="width:100%"
+          placeholder="🔍 Pesquisar colaborador..." oninput="filtrarColabs()" />
+
+        <button class="btn btn-secundario btn-sm" style="width:100%;margin-top:0.5rem"
+          onclick="verCalendario()">
+          📅 Calendário geral
+        </button>
+
+        <div class="colab-lista" id="colab-lista">
+          <div style="text-align:center;padding:1rem;color:var(--texto-secundario);font-size:0.85rem">
+            A carregar...
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Painel direito ── -->
+      <div id="painel-direito">
+
+        <!-- Calendário geral (estado inicial) -->
+        <div id="vista-calendario">
+          <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
+            <span class="bold" style="font-size:1.05rem">
+              📅 Calendário de Férias <span id="cal-ano-label"></span>
+            </span>
+            <div class="flex gap-1">
+              <select id="filtro-ano-cal" class="form-select" style="width:auto"
+                onchange="carregarCalendario()"></select>
+            </div>
+          </div>
+
+          <!-- Stats rápidas -->
+          <div class="stats-grid mb-3">
+            <div class="stat-card">
+              <span class="stat-label">Previstos</span>
+              <span class="stat-valor texto-muted" id="cal-previstos">—</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Confirmados</span>
+              <span class="stat-valor texto-azul" id="cal-confirmados">—</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Gozados</span>
+              <span class="stat-valor texto-verde" id="cal-gozados">—</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Adiados</span>
+              <span class="stat-valor texto-laranja" id="cal-adiados">—</span>
+            </div>
+          </div>
+
+          <!-- Grelha por mês -->
+          <div class="cal-grid" id="cal-grid"></div>
+
+          <!-- Tabela geral -->
+          <div class="card">
+            <div class="card-titulo">📋 Todos os Registos do Ano</div>
+            <div class="tabela-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Colaborador</th>
+                    <th>Mês previsto</th>
+                    <th>Período</th>
+                    <th>Dias</th>
+                    <th>Estado</th>
+                    <th>Observações</th>
+                  </tr>
+                </thead>
+                <tbody id="tabela-geral"></tbody>
+              </table>
+            </div>
+            <div id="sem-ferias-geral" style="display:none;text-align:center;
+              padding:1.5rem;color:var(--texto-secundario)">
+              Nenhum registo de férias para este ano.
+            </div>
+          </div>
+        </div>
+
+        <!-- Detalhe por colaborador -->
+        <div id="conteudo-colab" style="display:none">
+
+          <div class="card mb-3" id="card-colab-header"></div>
+
+          <!-- Stats do colaborador -->
+          <div class="stats-grid mb-3">
+            <div class="stat-card">
+              <span class="stat-label">Dias gozados (ano)</span>
+              <span class="stat-valor texto-verde" id="sc-gozados">—</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Próximas férias</span>
+              <span class="stat-valor" id="sc-proximas" style="font-size:0.95rem">—</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Total de registos</span>
+              <span class="stat-valor texto-acento" id="sc-total">—</span>
+            </div>
+          </div>
+
+          <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
+            <div class="flex gap-1">
+              <span class="bold">Histórico de Férias</span>
+            </div>
+            <div class="flex gap-1">
+              <select id="filtro-ano" class="form-select" style="width:auto"
+                onchange="carregarFerias()"></select>
+              <button class="btn btn-primario btn-sm" onclick="abrirModalNovo()">
+                ➕ Registar Férias
+              </button>
+            </div>
+          </div>
+
+          <div id="lista-ferias"></div>
+          <div id="sem-ferias-colab" style="display:none;text-align:center;
+            padding:2rem;color:var(--texto-secundario)">
+            Nenhum registo de férias para este colaborador.
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- ══ MODAL FÉRIAS ══ -->
+  <div class="modal-overlay" id="modal-ferias">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header">
+        <span class="modal-titulo" id="modal-ferias-titulo">➕ Registar Férias</span>
+        <button class="modal-fechar" onclick="fecharModal('modal-ferias')">✕</button>
+      </div>
+      <div class="modal-corpo">
+
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Ano *</label>
+            <input type="number" id="f-ano" class="form-input"
+              placeholder="Ex: 2026" min="2020" max="2035" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Mês Previsto</label>
+            <select id="f-mes" class="form-select">
+              <option value="">— Não definido —</option>
+              <option>Janeiro</option><option>Fevereiro</option><option>Março</option>
+              <option>Abril</option><option>Maio</option><option>Junho</option>
+              <option>Julho</option><option>Agosto</option><option>Setembro</option>
+              <option>Outubro</option><option>Novembro</option><option>Dezembro</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Data de Início</label>
+            <input type="date" id="f-inicio" class="form-input" onchange="calcularDias()" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Data de Fim</label>
+            <input type="date" id="f-fim" class="form-input" onchange="calcularDias()" />
+          </div>
+        </div>
+
+        <!-- Preview dias calculado -->
+        <div id="preview-dias" style="display:none;margin-bottom:1rem;
+          padding:0.75rem;background:var(--bg-terciario);border-radius:8px;
+          text-align:center;font-weight:700;font-size:1.1rem;color:var(--acento)">
+        </div>
+
+        <div class="form-grupo">
+          <label class="form-label">Estado *</label>
+          <select id="f-estado" class="form-select">
+            <option value="previsto">📋 Previsto</option>
+            <option value="confirmado">✅ Confirmado</option>
+            <option value="gozado">🏖️ Gozado</option>
+            <option value="adiado">⏳ Adiado</option>
+            <option value="cancelado">❌ Cancelado</option>
+          </select>
+        </div>
+
+        <div class="form-grupo">
+          <label class="form-label">Aprovado / Acordado por</label>
+          <input type="text" id="f-aprovado" class="form-input"
+            placeholder="Ex: Chefe de departamento, Direcção..." />
+        </div>
+
+        <div class="form-grupo">
+          <label class="form-label">Observações</label>
+          <textarea id="f-obs" class="form-textarea" rows="2"
+            placeholder="Ex: Substituído por X durante ausência, viagem marcada..."></textarea>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secundario" onclick="fecharModal('modal-ferias')">Cancelar</button>
+        <button class="btn btn-perigo btn-sm" id="btn-apagar-ferias"
+          onclick="confirmarApagar()" style="display:none">🗑 Apagar</button>
+        <button class="btn btn-primario" onclick="guardarFerias()">💾 Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    let colaboradores     = [];
+    let colaborsFiltrados = [];
+    let colabActual       = null;
+    let ferias            = [];
+    let idFeriasActual    = null;
+    const anoActual       = new Date().getFullYear();
+
+    const ESTADO_CONFIG = {
+      previsto:   { label: 'Previsto',   badge: 'badge-cinza',    emoji: '📋' },
+      confirmado: { label: 'Confirmado', badge: 'badge-azul',     emoji: '✅' },
+      gozado:     { label: 'Gozado',     badge: 'badge-verde',    emoji: '🏖️' },
+      adiado:     { label: 'Adiado',     badge: 'badge-laranja',  emoji: '⏳' },
+      cancelado:  { label: 'Cancelado',  badge: 'badge-vermelho', emoji: '❌' },
+    };
+
+    const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      exigirAuth();
+      renderNavbar('ferias');
+      popularSelectsAno();
+      await carregarColaboradores();
+      await carregarCalendario();
+    });
+
+    function popularSelectsAno() {
+      const anos = [];
+      for (let a = anoActual + 1; a >= 2020; a--) anos.push(a);
+      ['filtro-ano', 'filtro-ano-cal'].forEach(id => {
+        const sel = document.getElementById(id);
+        sel.innerHTML = anos.map(a =>
+          `<option value="${a}" ${a === anoActual ? 'selected' : ''}>${a}</option>`
+        ).join('');
+      });
+    }
+
+    // ── Colaboradores ─────────────────────────────────────
+    async function carregarColaboradores() {
+      const { data } = await db
+        .from('collaborators')
+        .select('id, code, name, categoria, mes_ferias')
+        .eq('active', true)
+        .order('name');
+      colaboradores     = data || [];
+      colaborsFiltrados = [...colaboradores];
+      renderColabs();
+    }
+
+    function renderColabs() {
+      const lista = document.getElementById('colab-lista');
+      if (colaborsFiltrados.length === 0) {
+        lista.innerHTML = `<div style="text-align:center;padding:1rem;
+          color:var(--texto-secundario);font-size:0.85rem">Nenhum resultado.</div>`;
+        return;
+      }
+      lista.innerHTML = colaborsFiltrados.map(c => `
+        <div class="colab-item ${colabActual?.id === c.id ? 'activo' : ''}"
+          onclick='seleccionarColab(${JSON.stringify(c)})'>
+          <div class="colab-item-nome">${c.name}</div>
+          <div class="colab-item-det">
+            ${c.code ?? '—'} · ${c.categoria ?? '—'}
+            ${c.mes_ferias
+              ? `· <span style="color:var(--acento)">🏖 ${c.mes_ferias}</span>`
+              : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function filtrarColabs() {
+      const t = document.getElementById('pesq-colab').value.toLowerCase();
+      colaborsFiltrados = colaboradores.filter(c =>
+        (c.name || '').toLowerCase().includes(t) ||
+        (c.code || '').toLowerCase().includes(t) ||
+        (c.categoria || '').toLowerCase().includes(t)
+      );
+      renderColabs();
+    }
+
+    // ── Calendário geral ──────────────────────────────────
+    function verCalendario() {
+      colabActual = null;
+      renderColabs();
+      document.getElementById('vista-calendario').style.display = 'block';
+      document.getElementById('conteudo-colab').style.display   = 'none';
+      carregarCalendario();
+    }
+
+    async function carregarCalendario() {
+      const ano = parseInt(document.getElementById('filtro-ano-cal').value) || anoActual;
+      document.getElementById('cal-ano-label').textContent = ano;
+
+      const { data } = await db
+        .from('hst_ferias')
+        .select('*, collaborators(name, code)')
+        .eq('ano', ano)
+        .order('mes_previsto');
+
+      const registos = data || [];
+
+      // Stats
+      document.getElementById('cal-previstos').textContent   = registos.filter(r => r.estado === 'previsto').length;
+      document.getElementById('cal-confirmados').textContent = registos.filter(r => r.estado === 'confirmado').length;
+      document.getElementById('cal-gozados').textContent     = registos.filter(r => r.estado === 'gozado').length;
+      document.getElementById('cal-adiados').textContent     = registos.filter(r => r.estado === 'adiado').length;
+
+      // Grelha por mês
+      const porMes = {};
+      MESES.forEach(m => porMes[m] = []);
+      registos.forEach(r => {
+        if (r.mes_previsto && porMes[r.mes_previsto] !== undefined) {
+          porMes[r.mes_previsto].push(r);
+        }
+      });
+
+      const calGrid = document.getElementById('cal-grid');
+      calGrid.innerHTML = MESES.map(mes => {
+        const lista = porMes[mes];
+        return `
+          <div class="cal-mes ${lista.length > 0 ? 'tem-ferias' : ''}">
+            <div class="cal-mes-nome">${mes}</div>
+            <div class="cal-mes-count">${lista.length || '—'}</div>
+            <div class="cal-mes-nomes">
+              ${lista.slice(0, 4).map(r =>
+                `<span style="color:${estadoCor(r.estado)}">${r.collaborators?.name?.split(' ')[0] ?? '?'}</span>`
+              ).join(', ')}
+              ${lista.length > 4 ? `<span class="texto-muted">+${lista.length - 4}</span>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Tabela geral
+      const tbody  = document.getElementById('tabela-geral');
+      const semMsg = document.getElementById('sem-ferias-geral');
+
+      if (registos.length === 0) {
+        tbody.innerHTML = '';
+        semMsg.style.display = 'block';
+        return;
+      }
+      semMsg.style.display = 'none';
+
+      tbody.innerHTML = registos.map(r => {
+        const cfg = ESTADO_CONFIG[r.estado] || ESTADO_CONFIG.previsto;
+        const dias = calcularDiasFerias(r.data_inicio, r.data_fim);
+        return `
+          <tr>
+            <td>
+              <div class="bold" style="font-size:0.85rem">${r.collaborators?.name ?? '—'}</div>
+              <div style="font-size:0.75rem;color:var(--texto-secundario)">${r.collaborators?.code ?? ''}</div>
+            </td>
+            <td>${r.mes_previsto ?? '—'}</td>
+            <td style="font-size:0.82rem;white-space:nowrap">
+              ${r.data_inicio ? `${formatarData(r.data_inicio)} → ${formatarData(r.data_fim) ?? '?'}` : '—'}
+            </td>
+            <td>${dias ? `${dias} dias` : '—'}</td>
+            <td><span class="badge ${cfg.badge}">${cfg.emoji} ${cfg.label}</span></td>
+            <td style="font-size:0.78rem;color:var(--texto-secundario)">${r.observacoes ?? '—'}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // ── Seleccionar colaborador ───────────────────────────
+    async function seleccionarColab(c) {
+      colabActual = c;
+      renderColabs();
+      document.getElementById('vista-calendario').style.display = 'none';
+      document.getElementById('conteudo-colab').style.display   = 'block';
+      renderHeaderColab();
+      await carregarFerias();
+    }
+
+    function renderHeaderColab() {
+      const c = colabActual;
+      document.getElementById('card-colab-header').innerHTML = `
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <div class="bold" style="font-size:1.05rem">${c.name}</div>
+            <div class="texto-muted" style="font-size:0.85rem">
+              ${c.code ?? '—'} · ${c.categoria ?? '—'}
+              ${c.mes_ferias
+                ? `· <span style="color:var(--acento)">🏖 Mês habitual: ${c.mes_ferias}</span>`
+                : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ── Carregar férias do colaborador ────────────────────
+    async function carregarFerias() {
+      const ano = parseInt(document.getElementById('filtro-ano').value) || anoActual;
+
+      const { data, error } = await db
+        .from('hst_ferias')
+        .select('*')
+        .eq('collaborator_id', colabActual.id)
+        .eq('ano', ano)
+        .order('data_inicio', { ascending: false });
+
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      ferias = data || [];
+      renderStatsColab();
+      renderFerias();
+    }
+
+    function renderStatsColab() {
+      const gozadas = ferias.filter(f => f.estado === 'gozado');
+      const diasGoz = gozadas.reduce((s, f) => s + (calcularDiasFerias(f.data_inicio, f.data_fim) || 0), 0);
+      document.getElementById('sc-gozados').textContent = diasGoz;
+      document.getElementById('sc-total').textContent   = ferias.length;
+
+      // Próximas férias confirmadas ou previstas
+      const futuras = ferias
+        .filter(f => (f.estado === 'confirmado' || f.estado === 'previsto') && f.data_inicio)
+        .filter(f => new Date(f.data_inicio) >= new Date())
+        .sort((a, b) => new Date(a.data_inicio) - new Date(b.data_inicio));
+
+      const proxima = futuras[0];
+      document.getElementById('sc-proximas').textContent = proxima
+        ? formatarData(proxima.data_inicio)
+        : ferias[0]?.mes_previsto ?? '—';
+    }
+
+    function renderFerias() {
+      const lista  = document.getElementById('lista-ferias');
+      const semMsg = document.getElementById('sem-ferias-colab');
+
+      if (ferias.length === 0) {
+        lista.innerHTML = '';
+        semMsg.style.display = 'block';
+        return;
+      }
+      semMsg.style.display = 'none';
+
+      lista.innerHTML = ferias.map(f => {
+        const cfg  = ESTADO_CONFIG[f.estado] || ESTADO_CONFIG.previsto;
+        const dias = calcularDiasFerias(f.data_inicio, f.data_fim);
+
+        return `
+          <div class="ferias-card ${f.estado}">
+            <div class="ferias-ano">${f.ano}</div>
+            <div class="ferias-periodo">
+              ${f.data_inicio
+                ? `${formatarData(f.data_inicio)} → ${formatarData(f.data_fim) ?? '?'}`
+                : f.mes_previsto ? `Previsto: ${f.mes_previsto}` : 'Período não definido'}
+              ${dias ? ` <span style="font-size:0.85rem;font-weight:400;color:var(--texto-secundario)">(${dias} dias)</span>` : ''}
+            </div>
+            <div class="ferias-badges">
+              <span class="badge ${cfg.badge}">${cfg.emoji} ${cfg.label}</span>
+              ${f.mes_previsto ? `<span class="badge badge-cinza">🗓 ${f.mes_previsto}</span>` : ''}
+              ${f.aprovado_por ? `<span class="badge badge-cinza">👤 ${f.aprovado_por}</span>` : ''}
+            </div>
+            ${f.observacoes ? `
+              <div style="font-size:0.82rem;color:var(--texto-secundario);margin-bottom:0.65rem;
+                padding:0.5rem;background:var(--bg-terciario);border-radius:6px">
+                📝 ${f.observacoes}
+              </div>
+            ` : ''}
+            <div class="ferias-acoes">
+              <button class="btn btn-secundario btn-sm" onclick="editarFerias(${f.id})">
+                ✏️ Editar
+              </button>
+              ${f.estado !== 'gozado' ? `
+                <button class="btn btn-primario btn-sm"
+                  onclick="marcarGozado(${f.id})">
+                  🏖️ Marcar como gozado
+                </button>
+              ` : ''}
+              ${f.estado === 'previsto' ? `
+                <button class="btn btn-secundario btn-sm"
+                  onclick="mudarEstado(${f.id}, 'confirmado')">
+                  ✅ Confirmar
+                </button>
+              ` : ''}
+              ${f.estado !== 'adiado' && f.estado !== 'gozado' ? `
+                <button class="btn btn-secundario btn-sm"
+                  onclick="mudarEstado(${f.id}, 'adiado')">
+                  ⏳ Adiar
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // ── Acções rápidas ────────────────────────────────────
+    async function marcarGozado(id) {
+      await db.from('hst_ferias').update({ estado: 'gozado' }).eq('id', id);
+      mostrarToast('Marcado como gozado!', 'sucesso');
+      await carregarFerias();
+    }
+
+    async function mudarEstado(id, estado) {
+      await db.from('hst_ferias').update({ estado }).eq('id', id);
+      mostrarToast('Estado actualizado.', 'sucesso');
+      await carregarFerias();
+    }
+
+    // ── Cálculo de dias ───────────────────────────────────
+    function calcularDiasFerias(inicio, fim) {
+      if (!inicio || !fim) return null;
+      const d1 = new Date(inicio);
+      const d2 = new Date(fim);
+      const diff = Math.round((d2 - d1) / 86400000) + 1;
+      return diff > 0 ? diff : null;
+    }
+
+    function calcularDias() {
+      const ini = document.getElementById('f-inicio').value;
+      const fim = document.getElementById('f-fim').value;
+      const el  = document.getElementById('preview-dias');
+      const dias = calcularDiasFerias(ini, fim);
+      if (dias) {
+        el.style.display = 'block';
+        el.textContent   = `🏖️ ${dias} dias de férias`;
+      } else {
+        el.style.display = 'none';
+      }
+    }
+
+    // ── Modal novo ────────────────────────────────────────
+    function abrirModalNovo() {
+      idFeriasActual = null;
+      document.getElementById('modal-ferias-titulo').textContent = '➕ Registar Férias';
+      document.getElementById('btn-apagar-ferias').style.display = 'none';
+      ['f-inicio','f-fim','f-aprovado','f-obs'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      document.getElementById('f-ano').value    = anoActual;
+      document.getElementById('f-mes').value    = colabActual?.mes_ferias ?? '';
+      document.getElementById('f-estado').value = 'previsto';
+      document.getElementById('preview-dias').style.display = 'none';
+      abrirModal('modal-ferias');
+    }
+
+    // ── Modal editar ──────────────────────────────────────
+    function editarFerias(id) {
+      const f = ferias.find(x => x.id === id);
+      if (!f) return;
+      idFeriasActual = id;
+      document.getElementById('modal-ferias-titulo').textContent = '✏️ Editar Férias';
+      document.getElementById('btn-apagar-ferias').style.display = 'inline-flex';
+      document.getElementById('f-ano').value      = f.ano ?? anoActual;
+      document.getElementById('f-mes').value      = f.mes_previsto ?? '';
+      document.getElementById('f-inicio').value   = f.data_inicio ?? '';
+      document.getElementById('f-fim').value      = f.data_fim ?? '';
+      document.getElementById('f-estado').value   = f.estado ?? 'previsto';
+      document.getElementById('f-aprovado').value = f.aprovado_por ?? '';
+      document.getElementById('f-obs').value      = f.observacoes ?? '';
+      calcularDias();
+      abrirModal('modal-ferias');
+    }
+
+    // ── Guardar ───────────────────────────────────────────
+    async function guardarFerias() {
+      const ano = parseInt(document.getElementById('f-ano').value);
+      if (!ano) { mostrarToast('O ano é obrigatório', 'aviso'); return; }
+
+      const payload = {
+        collaborator_id: colabActual.id,
+        ano,
+        mes_previsto:   document.getElementById('f-mes').value || null,
+        data_inicio:    document.getElementById('f-inicio').value || null,
+        data_fim:       document.getElementById('f-fim').value || null,
+        dias_gozados:   calcularDiasFerias(
+          document.getElementById('f-inicio').value,
+          document.getElementById('f-fim').value
+        ),
+        estado:         document.getElementById('f-estado').value,
+        aprovado_por:   document.getElementById('f-aprovado').value.trim() || null,
+        observacoes:    document.getElementById('f-obs').value.trim() || null,
+        registado_por:  obterCodigoUtilizador(),
+      };
+
+      const { error } = idFeriasActual
+        ? await db.from('hst_ferias').update(payload).eq('id', idFeriasActual)
+        : await db.from('hst_ferias').insert(payload);
+
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      mostrarToast(idFeriasActual ? 'Férias actualizadas!' : 'Férias registadas!', 'sucesso');
+      fecharModal('modal-ferias');
+      await carregarFerias();
+      await carregarCalendario();
+    }
+
+    // ── Apagar ────────────────────────────────────────────
+    function confirmarApagar() {
+      if (!confirm('Apagar este registo de férias?')) return;
+      apagarFerias();
+    }
+
+    async function apagarFerias() {
+      const { error } = await db.from('hst_ferias').delete().eq('id', idFeriasActual);
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      mostrarToast('Registo apagado.', 'sucesso');
+      fecharModal('modal-ferias');
+      await carregarFerias();
+    }
+
+    // ── Helpers ───────────────────────────────────────────
+    function estadoCor(estado) {
+      const mapa = {
+        previsto: 'var(--texto-secundario)', confirmado: 'var(--azul)',
+        gozado: 'var(--verde)', adiado: 'var(--laranja)', cancelado: 'var(--vermelho)'
+      };
+      return mapa[estado] || 'var(--texto-secundario)';
+    }
+
+    function abrirModal(id)  { document.getElementById(id).classList.add('aberto'); }
+    function fecharModal(id) { document.getElementById(id).classList.remove('aberto'); }
+
+    document.querySelectorAll('.modal-overlay').forEach(o => {
+      o.addEventListener('click', e => { if (e.target === o) o.classList.remove('aberto'); });
+    });
+  </script>
+
+</body>
+</html>
