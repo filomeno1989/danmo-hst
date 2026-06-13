@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DSS | Acidentes de Trabalho</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase.js"></script>
+  <script src="auth.js"></script>
+  <script src="tema.js"></script>
+  <script src="utils.js"></script>
+  <style>
+    .ac-layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+    .painel-colab {
+      background: var(--card-bg);
+      border: 1px solid var(--borda);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      position: sticky;
+      top: 80px;
+    }
+    .colab-item {
+      padding: 0.6rem 0.75rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+      border-left: 3px solid transparent;
+      margin-bottom: 0.25rem;
+    }
+    .colab-item:hover  { background: var(--bg-terciario); }
+    .colab-item.activo { background: var(--bg-terciario); border-left-color: var(--acento); }
+    .colab-item-nome   { font-size: 0.85rem; font-weight: 600; }
+    .colab-item-det    { font-size: 0.75rem; color: var(--texto-secundario); }
+    .colab-lista       { max-height: 60vh; overflow-y: auto; margin-top: 0.75rem; }
+
+    .sem-colab {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; min-height: 300px;
+      color: var(--texto-secundario); text-align: center; gap: 0.75rem;
+    }
+    .sem-colab-icon { font-size: 3rem; opacity: 0.4; }
+
+    /* Dashboard geral */
+    .dashboard-geral { }
+
+    /* Cards de acidente */
+    .ac-card {
+      background: var(--card-bg);
+      border: 1px solid var(--borda);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      border-left: 4px solid var(--borda);
+      transition: border-color 0.2s;
+    }
+    .ac-card.leve     { border-left-color: var(--verde); }
+    .ac-card.moderado { border-left-color: var(--laranja); }
+    .ac-card.grave    { border-left-color: var(--vermelho); }
+    .ac-card.fatal    { border-left-color: #7c3aed; }
+
+    .ac-card-header {
+      display: flex; justify-content: space-between;
+      align-items: flex-start; gap: 1rem; margin-bottom: 0.75rem;
+    }
+    .ac-data    { font-size: 0.8rem; color: var(--texto-secundario); }
+    .ac-tipo    { font-weight: 700; font-size: 0.95rem; }
+    .ac-badges  { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+    .ac-desc    { font-size: 0.85rem; color: var(--texto-secundario); margin-bottom: 0.75rem; }
+    .ac-acoes   { display: flex; gap: 0.5rem; }
+
+    .badge-roxo { background: rgba(124,58,237,0.15); color: #a78bfa; }
+
+    @media (max-width: 900px) {
+      .ac-layout { grid-template-columns: 1fr; }
+      .painel-colab { position: static; }
+      .colab-lista  { max-height: 200px; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav id="navbar"></nav>
+
+  <main class="pagina">
+    <div class="pagina-header">
+      <h1 class="pagina-titulo">⚠️ Acidentes de Trabalho</h1>
+      <p class="pagina-subtitulo">Registo, histórico e estatísticas de ocorrências</p>
+    </div>
+
+    <div class="ac-layout">
+
+      <!-- ── Painel esquerdo ── -->
+      <div class="painel-colab">
+        <input type="text" id="pesq-colab" class="pesquisa-input" style="width:100%"
+          placeholder="🔍 Pesquisar colaborador..." oninput="filtrarColabs()" />
+
+        <button class="btn btn-secundario btn-sm" style="width:100%;margin-top:0.5rem"
+          onclick="verDashboard()">
+          📊 Ver resumo geral
+        </button>
+
+        <div class="colab-lista" id="colab-lista">
+          <div style="text-align:center;padding:1rem;color:var(--texto-secundario);font-size:0.85rem">
+            A carregar...
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Painel direito ── -->
+      <div id="painel-direito">
+
+        <!-- Dashboard geral (estado inicial) -->
+        <div id="dashboard-geral">
+          <div class="stats-grid mb-3" id="stats-gerais">
+            <div class="stat-card">
+              <span class="stat-label">Total este ano</span>
+              <span class="stat-valor texto-acento" id="sg-ano">—</span>
+              <span class="stat-detalhe" id="sg-ano-label">acidentes em 2026</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Leves</span>
+              <span class="stat-valor texto-verde" id="sg-leve">—</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Moderados</span>
+              <span class="stat-valor texto-laranja" id="sg-moderado">—</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Graves</span>
+              <span class="stat-valor texto-vermelho" id="sg-grave">—</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Dias de baixa (ano)</span>
+              <span class="stat-valor texto-acento" id="sg-dias">—</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Em baixa agora</span>
+              <span class="stat-valor texto-vermelho" id="sg-baixa">—</span>
+              <span class="stat-detalhe">colaboradores</span>
+            </div>
+          </div>
+
+          <!-- Últimos acidentes -->
+          <div class="card">
+            <div class="card-titulo">📋 Últimos Acidentes Registados</div>
+            <div class="tabela-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Colaborador</th>
+                    <th>Tipo</th>
+                    <th>Gravidade</th>
+                    <th>Baixa</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody id="tabela-ultimos"></tbody>
+              </table>
+            </div>
+            <div id="sem-acidentes-geral" style="display:none;text-align:center;
+              padding:1.5rem;color:var(--texto-secundario)">
+              Nenhum acidente registado.
+            </div>
+          </div>
+        </div>
+
+        <!-- Detalhe por colaborador (oculto inicialmente) -->
+        <div id="conteudo-colab" style="display:none">
+
+          <div class="card mb-3" id="card-colab-header"></div>
+
+          <!-- Stats do colaborador -->
+          <div class="stats-grid mb-3" id="stats-colab">
+            <div class="stat-card">
+              <span class="stat-label">Total acidentes</span>
+              <span class="stat-valor texto-acento" id="sc-total">—</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Dias baixa total</span>
+              <span class="stat-valor texto-laranja" id="sc-dias">—</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Último acidente</span>
+              <span class="stat-valor" id="sc-ultimo" style="font-size:1rem">—</span>
+            </div>
+          </div>
+
+          <div class="flex justify-between items-center mb-3">
+            <span class="bold">Histórico de Acidentes</span>
+            <button class="btn btn-primario btn-sm" onclick="abrirModalNovo()">
+              ➕ Registar Acidente
+            </button>
+          </div>
+
+          <div id="lista-acidentes"></div>
+          <div id="sem-acidentes-colab" style="display:none;text-align:center;
+            padding:2rem;color:var(--texto-secundario)">
+            Nenhum acidente registado para este colaborador.
+          </div>
+
+        </div>
+
+      </div><!-- /painel-direito -->
+    </div>
+  </main>
+
+  <!-- ══ MODAL ACIDENTE ══ -->
+  <div class="modal-overlay" id="modal-ac">
+    <div class="modal" style="max-width:620px">
+      <div class="modal-header">
+        <span class="modal-titulo" id="modal-ac-titulo">➕ Registar Acidente</span>
+        <button class="modal-fechar" onclick="fecharModal('modal-ac')">✕</button>
+      </div>
+      <div class="modal-corpo">
+
+        <!-- Data e hora -->
+        <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ Quando</p>
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Data do Acidente *</label>
+            <input type="date" id="a-data" class="form-input" />
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Hora aproximada</label>
+            <input type="time" id="a-hora" class="form-input" />
+          </div>
+        </div>
+
+        <!-- Local -->
+        <hr class="sep" style="margin:0.75rem 0 1rem" />
+        <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ Onde</p>
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Zona *</label>
+            <select id="a-zona" class="form-select">
+              <option value="">— Seleccionar —</option>
+              <option value="Dentro do porto">Dentro do porto</option>
+              <option value="Oficina mecânica">Oficina mecânica</option>
+              <option value="Oficina eléctrica">Oficina eléctrica</option>
+              <option value="Oficina serralharia">Oficina serralharia</option>
+              <option value="Pátio / Exterior">Pátio / Exterior</option>
+              <option value="Armazém">Armazém</option>
+              <option value="Escritório">Escritório</option>
+              <option value="Fora do porto">Fora do porto</option>
+              <option value="Outro">Outro</option>
+            </select>
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Descrição do local</label>
+            <input type="text" id="a-local" class="form-input"
+              placeholder="Ex: Próximo da grua nº3, corredor B..." />
+          </div>
+        </div>
+
+        <!-- Tipo e gravidade -->
+        <hr class="sep" style="margin:0.75rem 0 1rem" />
+        <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ O que aconteceu</p>
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Tipo de Acidente *</label>
+            <select id="a-tipo" class="form-select">
+              <option value="">— Seleccionar —</option>
+              <option value="Queda em altura">Queda em altura</option>
+              <option value="Queda mesmo nível">Queda ao mesmo nível</option>
+              <option value="Corte / Laceração">Corte / Laceração</option>
+              <option value="Esmagamento">Esmagamento</option>
+              <option value="Queimadura">Queimadura</option>
+              <option value="Choque eléctrico">Choque eléctrico</option>
+              <option value="Colisão / Atropelamento">Colisão / Atropelamento</option>
+              <option value="Exposição a substância">Exposição a substância</option>
+              <option value="Esforço / Distensão">Esforço / Distensão muscular</option>
+              <option value="Pancada / Contusão">Pancada / Contusão</option>
+              <option value="Outro">Outro</option>
+            </select>
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Gravidade *</label>
+            <select id="a-gravidade" class="form-select">
+              <option value="leve">🟢 Leve — sem baixa médica</option>
+              <option value="moderado">🟠 Moderado — com baixa curta</option>
+              <option value="grave">🔴 Grave — hospitalização / baixa longa</option>
+              <option value="fatal">🟣 Fatal</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grupo">
+          <label class="form-label">Parte do corpo afectada</label>
+          <input type="text" id="a-parte-corpo" class="form-input"
+            placeholder="Ex: Mão direita, pé esquerdo, coluna, olho..." />
+        </div>
+
+        <div class="form-grupo">
+          <label class="form-label">Descrição detalhada do acidente *</label>
+          <textarea id="a-descricao" class="form-textarea" rows="3"
+            placeholder="Descreve o que aconteceu com o máximo de detalhe possível..."></textarea>
+        </div>
+
+        <!-- Baixa médica -->
+        <hr class="sep" style="margin:0.75rem 0 1rem" />
+        <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ Baixa Médica</p>
+        <div class="form-grupo">
+          <label class="form-label">Houve baixa médica?</label>
+          <select id="a-tem-baixa" class="form-select" onchange="toggleBaixa()">
+            <option value="nao">Não</option>
+            <option value="sim">Sim</option>
+          </select>
+        </div>
+        <div id="secao-baixa" style="display:none">
+          <div class="form-grid-2">
+            <div class="form-grupo">
+              <label class="form-label">Dias de baixa</label>
+              <input type="number" id="a-dias-baixa" class="form-input" min="1" placeholder="Ex: 5" />
+            </div>
+            <div class="form-grupo">
+              <label class="form-label">Data de regresso</label>
+              <input type="date" id="a-data-regresso" class="form-input" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Resposta e EPI -->
+        <hr class="sep" style="margin:0.75rem 0 1rem" />
+        <p class="form-label mb-1" style="font-size:0.9rem;color:var(--acento)">▸ Resposta e Prevenção</p>
+        <div class="form-grid-2">
+          <div class="form-grupo">
+            <label class="form-label">Encaminhado para</label>
+            <select id="a-encaminhado" class="form-select">
+              <option value="nenhum">Nenhum encaminhamento</option>
+              <option value="Posto médico interno">Posto médico interno</option>
+              <option value="Hospital Central da Beira">Hospital Central da Beira</option>
+              <option value="Clínica privada">Clínica privada</option>
+              <option value="Outro">Outro</option>
+            </select>
+          </div>
+          <div class="form-grupo">
+            <label class="form-label">Reportado a</label>
+            <input type="text" id="a-reportado" class="form-input"
+              placeholder="Ex: Chefe de turno, HST, Direcção..." />
+          </div>
+        </div>
+
+        <div class="form-grupo">
+          <label class="form-label">EPI (Equipamento de protecção) usado no momento?</label>
+          <select id="a-epi" class="form-select">
+            <option value="sim">✅ Sim — usava o EPI correcto</option>
+            <option value="parcial">⚠️ Parcialmente — EPI incompleto</option>
+            <option value="nao">❌ Não usava EPI</option>
+            <option value="nao_aplicavel">N/A — não era necessário</option>
+          </select>
+        </div>
+
+        <div class="form-grupo">
+          <label class="form-label">Observações adicionais</label>
+          <textarea id="a-obs" class="form-textarea" rows="2"
+            placeholder="Causa raiz, medidas correctivas tomadas, testemunhas..."></textarea>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secundario" onclick="fecharModal('modal-ac')">Cancelar</button>
+        <button class="btn btn-perigo btn-sm" id="btn-apagar-ac"
+          onclick="confirmarApagar()" style="display:none">🗑 Apagar</button>
+        <button class="btn btn-primario" onclick="guardarAcidente()">💾 Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    let colaboradores     = [];
+    let colaborsFiltrados = [];
+    let colabActual       = null;
+    let acidentes         = [];
+    let idAcActual        = null;
+
+    const GRAVIDADE_COR = {
+      leve: 'verde', moderado: 'laranja', grave: 'vermelho', fatal: 'roxo'
+    };
+    const GRAVIDADE_EMOJI = {
+      leve: '🟢', moderado: '🟠', grave: '🔴', fatal: '🟣'
+    };
+    const EPI_LABEL = {
+      sim: '✅ Usava EPI', parcial: '⚠️ EPI incompleto',
+      nao: '❌ Sem EPI', nao_aplicavel: 'N/A'
+    };
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      exigirAuth();
+      renderNavbar('acidentes');
+      await carregarColaboradores();
+      await carregarDashboardGeral();
+    });
+
+    // ── Colaboradores ─────────────────────────────────────
+    async function carregarColaboradores() {
+      const { data } = await db
+        .from('collaborators')
+        .select('id, code, name, categoria, doenca_cronica')
+        .eq('active', true)
+        .order('name');
+      colaboradores     = data || [];
+      colaborsFiltrados = [...colaboradores];
+      renderColabs();
+    }
+
+    function renderColabs() {
+      const lista = document.getElementById('colab-lista');
+      if (colaborsFiltrados.length === 0) {
+        lista.innerHTML = `<div style="text-align:center;padding:1rem;
+          color:var(--texto-secundario);font-size:0.85rem">Nenhum resultado.</div>`;
+        return;
+      }
+      lista.innerHTML = colaborsFiltrados.map(c => `
+        <div class="colab-item ${colabActual?.id === c.id ? 'activo' : ''}"
+          onclick='seleccionarColab(${JSON.stringify(c)})'>
+          <div class="colab-item-nome">${c.name}</div>
+          <div class="colab-item-det">${c.code ?? '—'} · ${c.categoria ?? '—'}</div>
+        </div>
+      `).join('');
+    }
+
+    function filtrarColabs() {
+      const t = document.getElementById('pesq-colab').value.toLowerCase();
+      colaborsFiltrados = colaboradores.filter(c =>
+        (c.name || '').toLowerCase().includes(t) ||
+        (c.code || '').toLowerCase().includes(t) ||
+        (c.categoria || '').toLowerCase().includes(t)
+      );
+      renderColabs();
+    }
+
+    // ── Dashboard geral ───────────────────────────────────
+    function verDashboard() {
+      colabActual = null;
+      renderColabs();
+      document.getElementById('dashboard-geral').style.display  = 'block';
+      document.getElementById('conteudo-colab').style.display   = 'none';
+      carregarDashboardGeral();
+    }
+
+    async function carregarDashboardGeral() {
+      const anoActual = new Date().getFullYear();
+      const inicioAno = `${anoActual}-01-01`;
+
+      const { data: todos } = await db
+        .from('hst_acidentes')
+        .select('*, collaborators(name, code)')
+        .gte('data_acidente', inicioAno)
+        .order('data_acidente', { ascending: false });
+
+      const registos = todos || [];
+
+      // Stats
+      document.getElementById('sg-ano').textContent      = registos.length;
+      document.getElementById('sg-leve').textContent     = registos.filter(a => a.gravidade === 'leve').length;
+      document.getElementById('sg-moderado').textContent = registos.filter(a => a.gravidade === 'moderado').length;
+      document.getElementById('sg-grave').textContent    = registos.filter(a => a.gravidade === 'grave' || a.gravidade === 'fatal').length;
+
+      const diasBaixa = registos.reduce((s, a) => s + (a.dias_baixa || 0), 0);
+      document.getElementById('sg-dias').textContent = diasBaixa;
+
+      // Em baixa agora (data_regresso no futuro ou null e tem baixa)
+      const hoje = new Date();
+      const emBaixa = registos.filter(a =>
+        a.dias_baixa > 0 && (!a.data_regresso || new Date(a.data_regresso) > hoje)
+      ).length;
+      document.getElementById('sg-baixa').textContent = emBaixa;
+
+      // Tabela últimos
+      const tbody  = document.getElementById('tabela-ultimos');
+      const semMsg = document.getElementById('sem-acidentes-geral');
+
+      if (registos.length === 0) {
+        tbody.innerHTML = '';
+        semMsg.style.display = 'block';
+        return;
+      }
+      semMsg.style.display = 'none';
+
+      tbody.innerHTML = registos.slice(0, 20).map(a => {
+        const cor = GRAVIDADE_COR[a.gravidade] || 'cinza';
+        const emB = a.dias_baixa > 0 && (!a.data_regresso || new Date(a.data_regresso) > hoje);
+        return `
+          <tr>
+            <td>${formatarData(a.data_acidente)}</td>
+            <td>
+              <div class="bold" style="font-size:0.85rem">${a.collaborators?.name ?? '—'}</div>
+              <div style="font-size:0.75rem;color:var(--texto-secundario)">${a.collaborators?.code ?? ''}</div>
+            </td>
+            <td style="font-size:0.85rem">${a.tipo_acidente ?? '—'}</td>
+            <td><span class="badge badge-${cor === 'roxo' ? 'roxo' : cor}">
+              ${GRAVIDADE_EMOJI[a.gravidade] ?? ''} ${capitalize(a.gravidade)}
+            </span></td>
+            <td>${a.dias_baixa ? `${a.dias_baixa} dias` : '—'}</td>
+            <td>${emB
+              ? '<span class="badge badge-vermelho">Em baixa</span>'
+              : '<span class="badge badge-verde">Regressou</span>'}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // ── Seleccionar colaborador ───────────────────────────
+    async function seleccionarColab(c) {
+      colabActual = c;
+      renderColabs();
+      document.getElementById('dashboard-geral').style.display = 'none';
+      document.getElementById('conteudo-colab').style.display  = 'block';
+      renderHeaderColab();
+      await carregarAcidentes();
+    }
+
+    function renderHeaderColab() {
+      const c = colabActual;
+      document.getElementById('card-colab-header').innerHTML = `
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <div class="bold" style="font-size:1.05rem">${c.name}</div>
+            <div class="texto-muted" style="font-size:0.85rem">
+              ${c.code ?? '—'} · ${c.categoria ?? '—'}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ── Carregar acidentes do colaborador ─────────────────
+    async function carregarAcidentes() {
+      const { data, error } = await db
+        .from('hst_acidentes')
+        .select('*')
+        .eq('collaborator_id', colabActual.id)
+        .order('data_acidente', { ascending: false });
+
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      acidentes = data || [];
+      renderStatsColab();
+      renderAcidentes();
+    }
+
+    function renderStatsColab() {
+      const total    = acidentes.length;
+      const diasTot  = acidentes.reduce((s, a) => s + (a.dias_baixa || 0), 0);
+      const ultimo   = acidentes[0]?.data_acidente;
+
+      document.getElementById('sc-total').textContent = total;
+      document.getElementById('sc-dias').textContent  = diasTot;
+
+      if (ultimo) {
+        const diff = Math.floor((new Date() - new Date(ultimo)) / 86400000);
+        document.getElementById('sc-ultimo').textContent =
+          diff === 0 ? 'Hoje' : diff === 1 ? 'Ontem' : `Há ${diff} dias`;
+      } else {
+        document.getElementById('sc-ultimo').textContent = '—';
+      }
+    }
+
+    function renderAcidentes() {
+      const lista  = document.getElementById('lista-acidentes');
+      const semMsg = document.getElementById('sem-acidentes-colab');
+
+      if (acidentes.length === 0) {
+        lista.innerHTML = '';
+        semMsg.style.display = 'block';
+        return;
+      }
+      semMsg.style.display = 'none';
+
+      const hoje = new Date();
+
+      lista.innerHTML = acidentes.map(a => {
+        const cor  = GRAVIDADE_COR[a.gravidade] || 'cinza';
+        const emB  = a.dias_baixa > 0 && (!a.data_regresso || new Date(a.data_regresso) > hoje);
+
+        return `
+          <div class="ac-card ${a.gravidade}">
+            <div class="ac-card-header">
+              <div>
+                <div class="ac-data">
+                  📅 ${formatarData(a.data_acidente)}
+                  ${a.hora_acidente ? ` às ${a.hora_acidente.slice(0,5)}` : ''}
+                </div>
+                <div class="ac-tipo">${a.tipo_acidente ?? 'Acidente'}</div>
+              </div>
+              <div class="flex gap-1">
+                <span class="badge badge-${cor === 'roxo' ? 'roxo' : cor}">
+                  ${GRAVIDADE_EMOJI[a.gravidade] ?? ''} ${capitalize(a.gravidade)}
+                </span>
+                ${emB
+                  ? '<span class="badge badge-vermelho">🏥 Em baixa</span>'
+                  : a.dias_baixa > 0
+                    ? '<span class="badge badge-verde">✅ Regressou</span>'
+                    : '<span class="badge badge-cinza">Sem baixa</span>'}
+              </div>
+            </div>
+
+            <div class="ac-badges">
+              ${a.local ? `<span class="badge badge-cinza">📍 ${a.local}</span>` : ''}
+              ${a.parte_corpo ? `<span class="badge badge-cinza">🩹 ${a.parte_corpo}</span>` : ''}
+              ${a.dias_baixa ? `<span class="badge badge-laranja">🗓 ${a.dias_baixa} dias baixa</span>` : ''}
+              ${a.data_regresso ? `<span class="badge badge-cinza">↩️ Regresso: ${formatarData(a.data_regresso)}</span>` : ''}
+              ${a.encaminhado_para && a.encaminhado_para !== 'nenhum'
+                ? `<span class="badge badge-azul">🏥 ${a.encaminhado_para}</span>` : ''}
+              ${a.epi_usado ? `<span class="badge badge-cinza">${EPI_LABEL[a.epi_usado] ?? a.epi_usado}</span>` : ''}
+            </div>
+
+            ${a.descricao ? `<div class="ac-desc">"${a.descricao}"</div>` : ''}
+
+            ${a.reportado_a ? `
+              <div style="font-size:0.78rem;color:var(--texto-secundario);margin-bottom:0.5rem">
+                Reportado a: <strong>${a.reportado_a}</strong>
+              </div>
+            ` : ''}
+
+            ${a.observacoes ? `
+              <div style="font-size:0.78rem;color:var(--texto-secundario);margin-bottom:0.75rem;
+                padding:0.5rem;background:var(--bg-terciario);border-radius:6px">
+                📝 ${a.observacoes}
+              </div>
+            ` : ''}
+
+            <div class="ac-acoes">
+              <button class="btn btn-secundario btn-sm" onclick="editarAcidente(${a.id})">
+                ✏️ Editar
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // ── Modal novo ────────────────────────────────────────
+    function abrirModalNovo() {
+      idAcActual = null;
+      document.getElementById('modal-ac-titulo').textContent = '➕ Registar Acidente';
+      document.getElementById('btn-apagar-ac').style.display = 'none';
+      // Limpar
+      ['a-data','a-hora','a-local','a-parte-corpo','a-descricao',
+       'a-dias-baixa','a-data-regresso','a-reportado','a-obs'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      document.getElementById('a-data').value       = dataHoje();
+      document.getElementById('a-zona').value       = '';
+      document.getElementById('a-tipo').value       = '';
+      document.getElementById('a-gravidade').value  = 'leve';
+      document.getElementById('a-tem-baixa').value  = 'nao';
+      document.getElementById('a-encaminhado').value = 'nenhum';
+      document.getElementById('a-epi').value        = 'sim';
+      toggleBaixa();
+      abrirModal('modal-ac');
+    }
+
+    // ── Modal editar ──────────────────────────────────────
+    async function editarAcidente(id) {
+      const { data } = await db.from('hst_acidentes').select('*').eq('id', id).single();
+      if (!data) return;
+      idAcActual = id;
+      document.getElementById('modal-ac-titulo').textContent = '✏️ Editar Acidente';
+      document.getElementById('btn-apagar-ac').style.display = 'inline-flex';
+
+      document.getElementById('a-data').value        = data.data_acidente ?? '';
+      document.getElementById('a-hora').value        = data.hora_acidente ? data.hora_acidente.slice(0,5) : '';
+      document.getElementById('a-zona').value        = data.zona ?? '';
+      document.getElementById('a-local').value       = data.local ?? '';
+      document.getElementById('a-tipo').value        = data.tipo_acidente ?? '';
+      document.getElementById('a-gravidade').value   = data.gravidade ?? 'leve';
+      document.getElementById('a-parte-corpo').value = data.parte_corpo ?? '';
+      document.getElementById('a-descricao').value   = data.descricao ?? '';
+      document.getElementById('a-tem-baixa').value   = data.dias_baixa > 0 ? 'sim' : 'nao';
+      document.getElementById('a-dias-baixa').value  = data.dias_baixa ?? '';
+      document.getElementById('a-data-regresso').value = data.data_regresso ?? '';
+      document.getElementById('a-encaminhado').value = data.encaminhado_para ?? 'nenhum';
+      document.getElementById('a-reportado').value   = data.reportado_a ?? '';
+      document.getElementById('a-epi').value         = data.epi_usado ?? 'sim';
+      document.getElementById('a-obs').value         = data.observacoes ?? '';
+      toggleBaixa();
+      abrirModal('modal-ac');
+    }
+
+    function toggleBaixa() {
+      const temBaixa = document.getElementById('a-tem-baixa').value === 'sim';
+      document.getElementById('secao-baixa').style.display = temBaixa ? 'block' : 'none';
+    }
+
+    // ── Guardar ───────────────────────────────────────────
+    async function guardarAcidente() {
+      const data      = document.getElementById('a-data').value;
+      const tipo      = document.getElementById('a-tipo').value;
+      const descricao = document.getElementById('a-descricao').value.trim();
+      const gravidade = document.getElementById('a-gravidade').value;
+
+      if (!data || !tipo || !descricao) {
+        mostrarToast('Data, tipo e descrição são obrigatórios', 'aviso'); return;
+      }
+
+      const temBaixa = document.getElementById('a-tem-baixa').value === 'sim';
+      const zona     = document.getElementById('a-zona').value;
+      const local    = document.getElementById('a-local').value.trim();
+
+      const payload = {
+        collaborator_id:  colabActual.id,
+        data_acidente:    data,
+        hora_acidente:    document.getElementById('a-hora').value || null,
+        zona:             zona || null,
+        local:            [zona, local].filter(Boolean).join(' — ') || null,
+        tipo_acidente:    tipo,
+        gravidade,
+        parte_corpo:      document.getElementById('a-parte-corpo').value.trim() || null,
+        descricao,
+        dias_baixa:       temBaixa ? (parseInt(document.getElementById('a-dias-baixa').value) || 0) : 0,
+        data_regresso:    temBaixa ? (document.getElementById('a-data-regresso').value || null) : null,
+        encaminhado_para: document.getElementById('a-encaminhado').value || null,
+        reportado_a:      document.getElementById('a-reportado').value.trim() || null,
+        epi_usado:        document.getElementById('a-epi').value || null,
+        observacoes:      document.getElementById('a-obs').value.trim() || null,
+        registado_por:    obterCodigoUtilizador(),
+      };
+
+      const { error } = idAcActual
+        ? await db.from('hst_acidentes').update(payload).eq('id', idAcActual)
+        : await db.from('hst_acidentes').insert(payload);
+
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      mostrarToast(idAcActual ? 'Acidente actualizado!' : 'Acidente registado!', 'sucesso');
+      fecharModal('modal-ac');
+      await carregarAcidentes();
+    }
+
+    // ── Apagar ────────────────────────────────────────────
+    function confirmarApagar() {
+      if (!confirm('Apagar este registo de acidente?')) return;
+      apagarAcidente();
+    }
+
+    async function apagarAcidente() {
+      const { error } = await db.from('hst_acidentes').delete().eq('id', idAcActual);
+      if (error) { mostrarToast('Erro: ' + error.message, 'erro'); return; }
+      mostrarToast('Registo apagado.', 'sucesso');
+      fecharModal('modal-ac');
+      await carregarAcidentes();
+    }
+
+    // ── Helpers ───────────────────────────────────────────
+    function capitalize(str) {
+      if (!str) return '—';
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    function abrirModal(id)  { document.getElementById(id).classList.add('aberto'); }
+    function fecharModal(id) { document.getElementById(id).classList.remove('aberto'); }
+
+    document.querySelectorAll('.modal-overlay').forEach(o => {
+      o.addEventListener('click', e => { if (e.target === o) o.classList.remove('aberto'); });
+    });
+  </script>
+
+</body>
+</html>
