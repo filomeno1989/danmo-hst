@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DSS | Relatórios</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase.js"></script>
+  <script src="auth.js"></script>
+  <script src="tema.js"></script>
+  <script src="utils.js"></script>
+  <style>
+    .rel-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .rel-card {
+      background: var(--card-bg);
+      border: 1px solid var(--borda);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .rel-card:hover {
+      border-color: var(--acento);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(245,158,11,0.1);
+    }
+    .rel-card-icon  { font-size: 2rem; }
+    .rel-card-titulo { font-weight: 700; font-size: 1rem; }
+    .rel-card-desc  { font-size: 0.82rem; color: var(--texto-secundario); line-height: 1.5; }
+
+    /* Área de relatório gerado */
+    #area-relatorio { display: none; }
+
+    .rel-header-acoes {
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;
+    }
+
+    /* ── Estilos de impressão ── */
+    @media print {
+      nav, .rel-grid, .rel-header-acoes, #toast, .modal-overlay,
+      .btn, #area-seleccao { display: none !important; }
+      body { background: #fff !important; color: #000 !important; }
+      .pagina { padding: 0 !important; max-width: 100% !important; }
+      #area-relatorio { display: block !important; }
+      .print-card {
+        break-inside: avoid;
+        border: 1px solid #ddd !important;
+        background: #fff !important;
+        color: #000 !important;
+      }
+      .print-titulo { color: #000 !important; }
+      .badge { border: 1px solid #ccc !important; color: #000 !important; background: #f5f5f5 !important; }
+      table { font-size: 11px !important; }
+      th, td { border: 1px solid #ddd !important; padding: 4px 8px !important; color: #000 !important; }
+      thead th { background: #f0f0f0 !important; }
+    }
+
+    /* Cards de impressão */
+    .print-section {
+      margin-bottom: 1.5rem;
+    }
+    .print-section-titulo {
+      font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--acento);
+      border-bottom: 2px solid var(--acento);
+      padding-bottom: 0.4rem; margin-bottom: 0.75rem;
+    }
+    .print-grid-2 {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 1.5rem;
+      font-size: 0.875rem;
+    }
+    .print-campo { margin-bottom: 0.35rem; }
+    .print-campo-label {
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--texto-secundario);
+    }
+    .print-campo-valor { font-weight: 600; }
+
+    .tensao-row-critico { background: rgba(220,38,38,0.08) !important; }
+    .tensao-row-vermelho { background: rgba(239,68,68,0.05) !important; }
+    .tensao-row-laranja  { background: rgba(249,115,22,0.05) !important; }
+  </style>
+</head>
+<body>
+
+  <nav id="navbar"></nav>
+
+  <main class="pagina">
+
+    <!-- Selecção de relatório -->
+    <div id="area-seleccao">
+      <div class="pagina-header">
+        <h1 class="pagina-titulo">📄 Relatórios</h1>
+        <p class="pagina-subtitulo">Selecciona o relatório que pretendes gerar</p>
+      </div>
+
+      <div class="rel-grid">
+        <div class="rel-card" onclick="mostrarRelatorio('individual')">
+          <div class="rel-card-icon">👤</div>
+          <div class="rel-card-titulo">Ficha Individual</div>
+          <div class="rel-card-desc">
+            Ficha completa de um colaborador com dados pessoais, saúde, medicação, acidentes e férias. Pronto para impressão.
+          </div>
+        </div>
+        <div class="rel-card" onclick="mostrarRelatorio('tensao')">
+          <div class="rel-card-icon">❤️</div>
+          <div class="rel-card-titulo">Panorama de Tensão Arterial</div>
+          <div class="rel-card-desc">
+            Última medição de tensão de todos os colaboradores, ordenada por gravidade. Crises e alertas no topo.
+          </div>
+        </div>
+        <div class="rel-card" onclick="mostrarRelatorio('medicacao')">
+          <div class="rel-card-icon">💊</div>
+          <div class="rel-card-titulo">Medicação e Stock</div>
+          <div class="rel-card-desc">
+            Lista completa de medicação activa. Destaque para colaboradores sem stock — pronto para levar ao posto de saúde.
+          </div>
+        </div>
+        <div class="rel-card" onclick="mostrarRelatorio('acidentes')">
+          <div class="rel-card-icon">⚠️</div>
+          <div class="rel-card-titulo">Relatório de Acidentes</div>
+          <div class="rel-card-desc">
+            Resumo anual de acidentes por gravidade, tipo e colaborador. Inclui quem está actualmente em baixa médica.
+          </div>
+        </div>
+        <div class="rel-card" onclick="mostrarRelatorio('ferias')">
+          <div class="rel-card-icon">🏖️</div>
+          <div class="rel-card-titulo">Plano de Férias</div>
+          <div class="rel-card-desc">
+            Plano anual de férias de todos os colaboradores por mês. Útil para planear substituições e turnos.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Área do relatório gerado -->
+    <div id="area-relatorio">
+      <div class="rel-header-acoes">
+        <div>
+          <h2 class="pagina-titulo" id="rel-titulo-actual">—</h2>
+          <p class="pagina-subtitulo" id="rel-subtitulo-actual">—</p>
+        </div>
+        <div class="flex gap-1 flex-wrap">
+          <button class="btn btn-secundario" onclick="voltarSeleccao()">← Voltar</button>
+          <button class="btn btn-primario" onclick="window.print()">🖨️ Imprimir / PDF</button>
+        </div>
+      </div>
+
+      <!-- Selector de colaborador (só para ficha individual) -->
+      <div id="sel-colab-container" style="display:none;margin-bottom:1.5rem">
+        <div class="card">
+          <div class="card-titulo">Seleccionar Colaborador</div>
+          <div class="flex gap-2 flex-wrap">
+            <input type="text" id="pesq-colab-rel" class="pesquisa-input"
+              placeholder="🔍 Pesquisar por nome ou código..." oninput="filtrarColabsRel()"
+              style="flex:1;min-width:200px" />
+          </div>
+          <div id="lista-colab-rel" style="margin-top:0.75rem;max-height:200px;overflow-y:auto"></div>
+        </div>
+      </div>
+
+      <!-- Selector de ano (para acidentes e férias) -->
+      <div id="sel-ano-container" style="display:none;margin-bottom:1.5rem">
+        <div class="flex gap-2 items-center">
+          <label class="form-label">Ano:</label>
+          <select id="sel-ano" class="form-select" style="width:auto" onchange="gerarRelatorioActual()">
+          </select>
+        </div>
+      </div>
+
+      <div id="conteudo-relatorio"></div>
+    </div>
+
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    let relActual       = null;
+    let colaboradores   = [];
+    let colabRelActual  = null;
+    let colabsFiltRel   = [];
+    const anoActual     = new Date().getFullYear();
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      exigirAuth();
+      renderNavbar('relatorios');
+      await carregarColaboradores();
+      popularAno();
+    });
+
+    async function carregarColaboradores() {
+      const { data } = await db
+        .from('collaborators')
+        .select('id, code, name, categoria, active, doenca_cronica, grupo_sanguineo, altura_cm, data_nascimento, naturalidade, data_admissao_danmo, data_admissao_grupo, tipo_vinculo, empresa_origem, mes_ferias, bi_numero, inss_numero, nuit_numero, contacto_1, contacto_2, email, observacoes_gerais')
+        .eq('active', true)
+        .order('name');
+      colaboradores  = data || [];
+      colabsFiltRel  = [...colaboradores];
+    }
+
+    function popularAno() {
+      const sel = document.getElementById('sel-ano');
+      for (let a = anoActual + 1; a >= 2020; a--) {
+        const opt = document.createElement('option');
+        opt.value = a; opt.textContent = a;
+        if (a === anoActual) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+
+    // ── Navegação ─────────────────────────────────────────
+    function mostrarRelatorio(tipo) {
+      relActual = tipo;
+      document.getElementById('area-seleccao').style.display  = 'none';
+      document.getElementById('area-relatorio').style.display = 'block';
+      document.getElementById('sel-colab-container').style.display = 'none';
+      document.getElementById('sel-ano-container').style.display   = 'none';
+      document.getElementById('conteudo-relatorio').innerHTML = '';
+      colabRelActual = null;
+
+      const titulos = {
+        individual: ['Ficha Individual do Colaborador', 'Selecciona o colaborador abaixo'],
+        tensao:     ['Panorama de Tensão Arterial', `Gerado em ${formatarData(new Date().toISOString())}`],
+        medicacao:  ['Relatório de Medicação e Stock', `Gerado em ${formatarData(new Date().toISOString())}`],
+        acidentes:  ['Relatório de Acidentes de Trabalho', ''],
+        ferias:     ['Plano de Férias', ''],
+      };
+
+      document.getElementById('rel-titulo-actual').textContent    = titulos[tipo][0];
+      document.getElementById('rel-subtitulo-actual').textContent = titulos[tipo][1];
+
+      if (tipo === 'individual') {
+        document.getElementById('sel-colab-container').style.display = 'block';
+        renderListaColabsRel();
+      } else if (tipo === 'acidentes' || tipo === 'ferias') {
+        document.getElementById('sel-ano-container').style.display = 'block';
+        gerarRelatorioActual();
+      } else {
+        gerarRelatorioActual();
+      }
+    }
+
+    function voltarSeleccao() {
+      document.getElementById('area-seleccao').style.display  = 'block';
+      document.getElementById('area-relatorio').style.display = 'none';
+      relActual = null;
+    }
+
+    function gerarRelatorioActual() {
+      if (!relActual) return;
+      const fns = {
+        individual: gerarFichaIndividual,
+        tensao:     gerarRelTensao,
+        medicacao:  gerarRelMedicacao,
+        acidentes:  gerarRelAcidentes,
+        ferias:     gerarRelFerias,
+      };
+      if (fns[relActual]) fns[relActual]();
+    }
+
+    // ── Selector colaborador (ficha individual) ───────────
+    function renderListaColabsRel() {
+      const lista = document.getElementById('lista-colab-rel');
+      lista.innerHTML = colabsFiltRel.map(c => `
+        <div style="padding:0.5rem 0.75rem;border-radius:6px;cursor:pointer;
+          transition:background 0.15s;border-left:3px solid ${colabRelActual?.id === c.id ? 'var(--acento)' : 'transparent'};
+          background:${colabRelActual?.id === c.id ? 'var(--bg-terciario)' : 'transparent'}"
+          onmouseover="this.style.background='var(--bg-terciario)'"
+          onmouseout="this.style.background='${colabRelActual?.id === c.id ? 'var(--bg-terciario)' : 'transparent'}'"
+          onclick='seleccionarColabRel(${JSON.stringify(c)})'>
+          <span class="bold" style="font-size:0.85rem">${c.name}</span>
+          <span class="texto-muted" style="font-size:0.78rem;margin-left:0.5rem">${c.code ?? ''} · ${c.categoria ?? ''}</span>
+        </div>
+      `).join('');
+    }
+
+    function filtrarColabsRel() {
+      const t = document.getElementById('pesq-colab-rel').value.toLowerCase();
+      colabsFiltRel = colaboradores.filter(c =>
+        (c.name || '').toLowerCase().includes(t) ||
+        (c.code || '').toLowerCase().includes(t)
+      );
+      renderListaColabsRel();
+    }
+
+    function seleccionarColabRel(c) {
+      colabRelActual = c;
+      renderListaColabsRel();
+      gerarFichaIndividual();
+    }
+
+    // ══════════════════════════════════════════════════════
+    // FICHA INDIVIDUAL
+    // ══════════════════════════════════════════════════════
+    async function gerarFichaIndividual() {
+      if (!colabRelActual) return;
+      const c = colabRelActual;
+      const el = document.getElementById('conteudo-relatorio');
+      el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--texto-secundario)">A gerar ficha...</div>';
+
+      // Buscar dados de saúde
+      const [rTensao, rGlicemia, rPeso, rMed, rAcid, rFerias] = await Promise.all([
+        db.from('hst_tensao').select('*').eq('collaborator_id', c.id).order('data_medicao', {ascending:false}).limit(5),
+        db.from('hst_glicemia').select('*').eq('collaborator_id', c.id).order('data_medicao', {ascending:false}).limit(3),
+        db.from('hst_peso').select('*').eq('collaborator_id', c.id).order('data_medicao', {ascending:false}).limit(3),
+        db.from('hst_medicacao').select('*').eq('collaborator_id', c.id).eq('ativo', true),
+        db.from('hst_acidentes').select('*').eq('collaborator_id', c.id).order('data_acidente', {ascending:false}).limit(5),
+        db.from('hst_ferias').select('*').eq('collaborator_id', c.id).eq('ano', anoActual),
+      ]);
+
+      const tensoes   = rTensao.data   || [];
+      const glicemias = rGlicemia.data || [];
+      const pesos     = rPeso.data     || [];
+      const meds      = rMed.data      || [];
+      const acids     = rAcid.data     || [];
+      const ferias    = rFerias.data   || [];
+
+      const ultTensao = tensoes[0];
+      const classTensao = ultTensao ? classificarTensao(ultTensao.sistolica, ultTensao.diastolica) : null;
+      const ultPeso   = pesos[0];
+      const imc       = ultPeso ? calcularIMC(ultPeso.peso_kg, c.altura_cm) : null;
+      const classIMC  = imc ? classificarIMC(imc) : null;
+      const ultGlic   = glicemias[0];
+      const classGlic = ultGlic ? classificarGlicemia(ultGlic.valor_mmol) : null;
+
+      const admDanmo = c.data_admissao_danmo || c.data_admissao;
+
+      el.innerHTML = `
+        <!-- Cabeçalho -->
+        <div class="card mb-3 print-card">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem">
+            <div>
+              <div style="font-size:1.4rem;font-weight:700">${c.name}</div>
+              <div class="texto-muted" style="font-size:0.9rem">
+                ${c.code ?? '—'} · ${c.categoria ?? '—'}
+              </div>
+            </div>
+            <div style="text-align:right;font-size:0.78rem;color:var(--texto-secundario)">
+              <div>Portal HST — Danmo Service System</div>
+              <div>Porto da Beira · Sofala · Moçambique</div>
+              <div>Gerado em ${formatarData(new Date().toISOString())}</div>
+            </div>
+          </div>
+          <hr class="sep" />
+          <div class="flex gap-1 flex-wrap">
+            ${c.grupo_sanguineo ? `<span class="badge badge-vermelho">🩸 ${c.grupo_sanguineo}</span>` : ''}
+            ${c.doenca_cronica  ? `<span class="badge badge-laranja">⚕ ${c.doenca_cronica}</span>` : ''}
+            <span class="badge badge-verde">● Activo</span>
+          </div>
+        </div>
+
+        <!-- Dados pessoais -->
+        <div class="card mb-3 print-card print-section">
+          <div class="print-section-titulo">▸ Dados Pessoais e Documentos</div>
+          <div class="print-grid-2">
+            ${campo('Data de Nascimento', c.data_nascimento ? `${formatarData(c.data_nascimento)} (${calcularIdade(c.data_nascimento)} anos)` : '—')}
+            ${campo('Naturalidade', c.naturalidade)}
+            ${campo('Admissão na Danmo', admDanmo ? `${formatarData(admDanmo)} (${calcularAnosTrab(admDanmo)})` : '—')}
+            ${campo('Mês de Férias', c.mes_ferias)}
+            ${campo('B.I. Nº', c.bi_numero)}
+            ${campo('INSS Nº', c.inss_numero)}
+            ${campo('NUIT Nº', c.nuit_numero)}
+            ${campo('Contacto', [c.contacto_1, c.contacto_2].filter(Boolean).join(' / '))}
+            ${campo('Email', c.email)}
+            ${campo('Altura', c.altura_cm ? c.altura_cm + ' cm' : '—')}
+          </div>
+        </div>
+
+        <!-- Saúde resumida -->
+        <div class="card mb-3 print-card print-section">
+          <div class="print-section-titulo">▸ Resumo de Saúde</div>
+          <div class="print-grid-2">
+            <div>
+              <div class="print-campo-label">Última Tensão Arterial</div>
+              <div class="print-campo-valor">
+                ${ultTensao
+                  ? `${ultTensao.sistolica}/${ultTensao.diastolica} mmHg · ${ultTensao.pulsacao ? ultTensao.pulsacao + ' bpm · ' : ''}
+                     <span style="color:var(--${classTensao.cor === 'critico' ? 'vermelho' : classTensao.cor})">${classTensao.emoji} ${classTensao.nivel}</span>
+                     <br><small class="texto-muted">${formatarDataHora(ultTensao.data_medicao)}</small>`
+                  : '—'}
+              </div>
+            </div>
+            <div>
+              <div class="print-campo-label">Última Glicemia</div>
+              <div class="print-campo-valor">
+                ${ultGlic
+                  ? `${ultGlic.valor_mmol} mmol/L · ${ultGlic.tipo_medicao === 'jejum' ? 'Jejum' : 'Pós-refeição'}
+                     <span style="color:var(--${classGlic.cor === 'critico' ? 'vermelho' : classGlic.cor})">${classGlic.emoji} ${classGlic.nivel}</span>
+                     <br><small class="texto-muted">${formatarDataHora(ultGlic.data_medicao)}</small>`
+                  : '—'}
+              </div>
+            </div>
+            <div>
+              <div class="print-campo-label">Último Peso / IMC</div>
+              <div class="print-campo-valor">
+                ${ultPeso
+                  ? `${ultPeso.peso_kg} kg${imc ? ` · IMC ${imc}` : ''}
+                     ${classIMC ? `<span style="color:var(--${classIMC.cor === 'critico' ? 'vermelho' : classIMC.cor})">${classIMC.emoji} ${classIMC.nivel}</span>` : ''}
+                     <br><small class="texto-muted">${formatarData(ultPeso.data_medicao)}</small>`
+                  : '—'}
+              </div>
+            </div>
+            <div>
+              <div class="print-campo-label">Medicação Activa</div>
+              <div class="print-campo-valor">
+                ${meds.length === 0 ? '—' : meds.map(m =>
+                  `${m.medicamento}${m.dosagem ? ' ' + m.dosagem : ''}
+                   ${!m.tem_stock ? '<span class="badge badge-vermelho" style="font-size:0.7rem">Sem stock</span>' : ''}`
+                ).join('<br>')}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Histórico tensão -->
+        ${tensoes.length > 0 ? `
+        <div class="card mb-3 print-card print-section">
+          <div class="print-section-titulo">▸ Últimas Medições de Tensão (${tensoes.length})</div>
+          <div class="tabela-wrapper">
+            <table>
+              <thead><tr><th>Data / Hora</th><th>SYS</th><th>DIA</th><th>Pulso</th><th>Classificação</th><th>Condição</th></tr></thead>
+              <tbody>
+                ${tensoes.map(t => {
+                  const ct = classificarTensao(t.sistolica, t.diastolica);
+                  return `<tr class="${ct.cor === 'critico' ? 'tensao-row-critico' : ct.cor === 'vermelho' ? 'tensao-row-vermelho' : ct.cor === 'laranja' ? 'tensao-row-laranja' : ''}">
+                    <td>${formatarDataHora(t.data_medicao)}</td>
+                    <td class="bold">${t.sistolica}</td>
+                    <td class="bold">${t.diastolica}</td>
+                    <td>${t.pulsacao ?? '—'}</td>
+                    <td><span class="badge badge-${t.diastolica >= 110 || t.sistolica >= 180 ? 'vermelho' : ct.cor === 'laranja' ? 'laranja' : ct.cor === 'verde' ? 'verde' : 'cinza'}">${ct.emoji} ${ct.nivel}</span></td>
+                    <td style="font-size:0.78rem">${labelCondicao(t.condicao)}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>` : ''}
+
+        <!-- Acidentes -->
+        ${acids.length > 0 ? `
+        <div class="card mb-3 print-card print-section">
+          <div class="print-section-titulo">▸ Acidentes de Trabalho (${acids.length})</div>
+          <div class="tabela-wrapper">
+            <table>
+              <thead><tr><th>Data</th><th>Tipo</th><th>Gravidade</th><th>Dias Baixa</th><th>Encaminhamento</th></tr></thead>
+              <tbody>
+                ${acids.map(a => `
+                  <tr>
+                    <td>${formatarData(a.data_acidente)}</td>
+                    <td>${a.tipo_acidente ?? '—'}</td>
+                    <td><span class="badge badge-${a.gravidade === 'leve' ? 'verde' : a.gravidade === 'moderado' ? 'laranja' : 'vermelho'}">${a.gravidade}</span></td>
+                    <td>${a.dias_baixa ?? 0}</td>
+                    <td style="font-size:0.78rem">${a.encaminhado_para ?? '—'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>` : ''}
+
+        <!-- Férias -->
+        ${ferias.length > 0 ? `
+        <div class="card mb-3 print-card print-section">
+          <div class="print-section-titulo">▸ Férias ${anoActual}</div>
+          <div class="tabela-wrapper">
+            <table>
+              <thead><tr><th>Mês Previsto</th><th>Período</th><th>Dias</th><th>Estado</th></tr></thead>
+              <tbody>
+                ${ferias.map(f => {
+                  const dias = f.data_inicio && f.data_fim
+                    ? Math.round((new Date(f.data_fim) - new Date(f.data_inicio)) / 86400000) + 1 : '—';
+                  return `<tr>
+                    <td>${f.mes_previsto ?? '—'}</td>
+                    <td>${f.data_inicio ? `${formatarData(f.data_inicio)} → ${formatarData(f.data_fim)}` : '—'}</td>
+                    <td>${dias}</td>
+                    <td><span class="badge badge-${f.estado === 'gozado' ? 'verde' : f.estado === 'confirmado' ? 'azul' : 'cinza'}">${f.estado}</span></td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>` : ''}
+
+        ${c.observacoes_gerais ? `
+        <div class="card print-card print-section">
+          <div class="print-section-titulo">▸ Observações Gerais</div>
+          <p style="font-size:0.875rem;color:var(--texto-secundario)">${c.observacoes_gerais}</p>
+        </div>` : ''}
+      `;
+    }
+
+    // ══════════════════════════════════════════════════════
+    // PANORAMA DE TENSÃO
+    // ══════════════════════════════════════════════════════
+    async function gerarRelTensao() {
+      const el = document.getElementById('conteudo-relatorio');
+      el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--texto-secundario)">A carregar dados...</div>';
+      document.getElementById('rel-subtitulo-actual').textContent =
+        `Gerado em ${formatarDataHora(new Date().toISOString())} · ${colaboradores.length} colaboradores activos`;
+
+      // Última tensão de cada colaborador
+      const { data: todasTensoes } = await db
+        .from('hst_tensao')
+        .select('*, collaborators(id, name, code, categoria, doenca_cronica)')
+        .order('data_medicao', { ascending: false });
+
+      // Agrupar por colaborador — só a última
+      const porColab = {};
+      (todasTensoes || []).forEach(t => {
+        const cid = t.collaborators?.id;
+        if (cid && !porColab[cid]) porColab[cid] = t;
+      });
+
+      const registos = Object.values(porColab);
+
+      // Ordenar por gravidade
+      const ordemGrav = { critico: 0, vermelho: 1, laranja: 2, azul: 3, verde: 4 };
+      registos.sort((a, b) => {
+        const ca = classificarTensao(a.sistolica, a.diastolica);
+        const cb = classificarTensao(b.sistolica, b.diastolica);
+        return (ordemGrav[ca.cor] ?? 5) - (ordemGrav[cb.cor] ?? 5);
+      });
+
+      // Stats
+      const stats = { critico: 0, vermelho: 0, laranja: 0, verde: 0, azul: 0 };
+      registos.forEach(r => { const c = classificarTensao(r.sistolica, r.diastolica); stats[c.cor] = (stats[c.cor] || 0) + 1; });
+      const semMed = colaboradores.length - registos.length;
+
+      el.innerHTML = `
+        <div class="stats-grid mb-3">
+          <div class="stat-card"><span class="stat-label">Total activos</span><span class="stat-valor texto-acento">${colaboradores.length}</span></div>
+          <div class="stat-card"><span class="stat-label">Com medição</span><span class="stat-valor texto-verde">${registos.length}</span></div>
+          <div class="stat-card"><span class="stat-label">Sem medição</span><span class="stat-valor texto-muted">${semMed}</span></div>
+          <div class="stat-card"><span class="stat-label">🚨 Crise</span><span class="stat-valor texto-vermelho">${stats.critico || 0}</span></div>
+          <div class="stat-card"><span class="stat-label">🔴 Grau 2</span><span class="stat-valor texto-vermelho">${stats.vermelho || 0}</span></div>
+          <div class="stat-card"><span class="stat-label">🟠 Grau 1</span><span class="stat-valor texto-laranja">${stats.laranja || 0}</span></div>
+        </div>
+
+        <div class="card print-card">
+          <div class="tabela-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Colaborador</th>
+                  <th>Função</th>
+                  <th>SYS</th>
+                  <th>DIA</th>
+                  <th>Pulso</th>
+                  <th>Classificação</th>
+                  <th>Data Medição</th>
+                  <th>Doença</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${registos.map(r => {
+                  const ct = classificarTensao(r.sistolica, r.diastolica);
+                  const rowClass = ct.cor === 'critico' ? 'tensao-row-critico'
+                    : ct.cor === 'vermelho' ? 'tensao-row-vermelho'
+                    : ct.cor === 'laranja'  ? 'tensao-row-laranja' : '';
+                  return `
+                    <tr class="${rowClass}">
+                      <td>
+                        <div class="bold" style="font-size:0.85rem">${r.collaborators?.name ?? '—'}</div>
+                        <div style="font-size:0.75rem;color:var(--texto-secundario)">${r.collaborators?.code ?? ''}</div>
+                      </td>
+                      <td style="font-size:0.82rem">${r.collaborators?.categoria ?? '—'}</td>
+                      <td class="bold">${r.sistolica}</td>
+                      <td class="bold">${r.diastolica}</td>
+                      <td>${r.pulsacao ?? '—'}</td>
+                      <td><span class="badge badge-${ct.cor === 'critico' || ct.cor === 'vermelho' ? 'vermelho' : ct.cor === 'laranja' ? 'laranja' : ct.cor === 'verde' ? 'verde' : 'azul'}">${ct.emoji} ${ct.nivel}</span></td>
+                      <td style="font-size:0.78rem">${formatarDataHora(r.data_medicao)}</td>
+                      <td style="font-size:0.78rem;color:var(--laranja)">${r.collaborators?.doenca_cronica ?? '—'}</td>
+                    </tr>
+                  `;
+                }).join('')}
+                ${semMed > 0 ? `
+                  <tr>
+                    <td colspan="8" style="text-align:center;font-size:0.82rem;
+                      color:var(--texto-secundario);padding:0.75rem">
+                      + ${semMed} colaboradores ainda sem medição registada
+                    </td>
+                  </tr>` : ''}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // ══════════════════════════════════════════════════════
+    // MEDICAÇÃO E STOCK
+    // ══════════════════════════════════════════════════════
+    async function gerarRelMedicacao() {
+      const el = document.getElementById('conteudo-relatorio');
+      el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--texto-secundario)">A carregar...</div>';
+
+      const { data } = await db
+        .from('hst_medicacao')
+        .select('*, collaborators(name, code, categoria)')
+        .eq('ativo', true)
+        .order('tem_stock')
+        .order('medicamento');
+
+      const meds    = data || [];
+      const semStock = meds.filter(m => !m.tem_stock);
+      const comStock = meds.filter(m => m.tem_stock);
+
+      document.getElementById('rel-subtitulo-actual').textContent =
+        `${meds.length} medicações activas · ${semStock.length} sem stock`;
+
+      el.innerHTML = `
+        <div class="stats-grid mb-3">
+          <div class="stat-card"><span class="stat-label">Total activas</span><span class="stat-valor texto-acento">${meds.length}</span></div>
+          <div class="stat-card"><span class="stat-label">Com stock</span><span class="stat-valor texto-verde">${comStock.length}</span></div>
+          <div class="stat-card"><span class="stat-label">Sem stock</span><span class="stat-valor texto-vermelho">${semStock.length}</span></div>
+        </div>
+
+        ${semStock.length > 0 ? `
+        <div class="card mb-3 print-card" style="border-left:4px solid var(--vermelho)">
+          <div class="card-titulo" style="color:var(--vermelho)">🚨 Sem Stock — Pedir ao Posto de Saúde (${semStock.length})</div>
+          <div class="tabela-wrapper">
+            <table>
+              <thead><tr><th>Colaborador</th><th>Função</th><th>Medicamento</th><th>Dosagem</th><th>Frequência</th><th>Prescrito por</th></tr></thead>
+              <tbody>
+                ${semStock.map(m => `
+                  <tr>
+                    <td><div class="bold" style="font-size:0.85rem">${m.collaborators?.name ?? '—'}</div><div style="font-size:0.75rem;color:var(--texto-secundario)">${m.collaborators?.code ?? ''}</div></td>
+                    <td style="font-size:0.82rem">${m.collaborators?.categoria ?? '—'}</td>
+                    <td class="bold">${m.medicamento}</td>
+                    <td>${m.dosagem ?? '—'}</td>
+                    <td>${m.frequencia ?? '—'}</td>
+                    <td style="font-size:0.82rem">${m.prescrito_por ?? '—'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>` : ''}
+
+        <div class="card print-card">
+          <div class="card-titulo">💊 Todas as Medicações Activas</div>
+          <div class="tabela-wrapper">
+            <table>
+              <thead><tr><th>Colaborador</th><th>Medicamento</th><th>Dosagem</th><th>Frequência</th><th>Início</th><th>Fim</th><th>Stock</th></tr></thead>
+              <tbody>
+                ${meds.map(m => `
+                  <tr>
+                    <td><div class="bold" style="font-size:0.85rem">${m.collaborators?.name ?? '—'}</div><div style="font-size:0.75rem;color:var(--texto-secundario)">${m.collaborators?.code ?? ''}</div></td>
+                    <td class="bold">${m.medicamento}</td>
+                    <td>${m.dosagem ?? '—'}</td>
+                    <td>${m.frequencia ?? '—'}</td>
+                    <td style="font-size:0.78rem">${formatarData(m.data_inicio)}</td>
+                    <td style="font-size:0.78rem">${m.data_fim ? formatarData(m.data_fim) : 'Contínuo'}</td>
+                    <td><span class="badge ${m.tem_stock ? 'badge-verde' : 'badge-vermelho'}">${m.tem_stock ? '✅' : '❌'}</span></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // ══════════════════════════════════════════════════════
+    // ACIDENTES
+    // ══════════════════════════════════════════════════════
+    async function gerarRelAcidentes() {
+      const ano = parseInt(document.getElementById('sel-ano').value) || anoActual;
+      const el  = document.getElementById('conteudo-relatorio');
+      el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--texto-secundario)">A carregar...</div>';
+      document.getElementById('rel-subtitulo-actual').textContent = `Ano ${ano}`;
+
+      const { data } = await db
+        .from('hst_acidentes')
+        .select('*, collaborators(name, code, categoria)')
+        .gte('data_acidente', `${ano}-01-01`)
+        .lte('data_acidente', `${ano}-12-31`)
+        .order('data_acidente', { ascending: false });
+
+      const acids   = data || [];
+      const hoje    = new Date();
+      const emBaixa = acids.filter(a => a.dias_baixa > 0 && (!a.data_regresso || new Date(a.data_regresso) > hoje));
+      const diasTot = acids.reduce((s, a) => s + (a.dias_baixa || 0), 0);
+
+      el.innerHTML = `
+        <div class="stats-grid mb-3">
+          <div class="stat-card"><span class="stat-label">Total ${ano}</span><span class="stat-valor texto-acento">${acids.length}</span></div>
+          <div class="stat-card"><span class="stat-label">Leves</span><span class="stat-valor texto-verde">${acids.filter(a => a.gravidade === 'leve').length}</span></div>
+          <div class="stat-card"><span class="stat-label">Moderados</span><span class="stat-valor texto-laranja">${acids.filter(a => a.gravidade === 'moderado').length}</span></div>
+          <div class="stat-card"><span class="stat-label">Graves</span><span class="stat-valor texto-vermelho">${acids.filter(a => a.gravidade === 'grave' || a.gravidade === 'fatal').length}</span></div>
+          <div class="stat-card"><span class="stat-label">Dias baixa total</span><span class="stat-valor texto-laranja">${diasTot}</span></div>
+          <div class="stat-card"><span class="stat-label">Em baixa agora</span><span class="stat-valor texto-vermelho">${emBaixa.length}</span></div>
+        </div>
+
+        ${emBaixa.length > 0 ? `
+        <div class="card mb-3 print-card" style="border-left:4px solid var(--vermelho)">
+          <div class="card-titulo" style="color:var(--vermelho)">🏥 Em Baixa Médica Actualmente</div>
+          <div class="tabela-wrapper">
+            <table>
+              <thead><tr><th>Colaborador</th><th>Acidente</th><th>Tipo</th><th>Dias Baixa</th><th>Regresso previsto</th></tr></thead>
+              <tbody>
+                ${emBaixa.map(a => `
+                  <tr>
+                    <td class="bold" style="font-size:0.85rem">${a.collaborators?.name ?? '—'}</td>
+                    <td>${formatarData(a.data_acidente)}</td>
+                    <td>${a.tipo_acidente ?? '—'}</td>
+                    <td>${a.dias_baixa}</td>
+                    <td>${a.data_regresso ? formatarData(a.data_regresso) : '—'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>` : ''}
+
+        <div class="card print-card">
+          <div class="card-titulo">📋 Todos os Acidentes de ${ano}</div>
+          <div class="tabela-wrapper">
+            <table>
+              <thead><tr><th>Data</th><th>Colaborador</th><th>Tipo</th><th>Gravidade</th><th>Local</th><th>Dias Baixa</th><th>EPI</th></tr></thead>
+              <tbody>
+                ${acids.length === 0
+                  ? `<tr><td colspan="7" style="text-align:center;padding:1.5rem;color:var(--texto-secundario)">Nenhum acidente registado em ${ano}</td></tr>`
+                  : acids.map(a => `
+                    <tr>
+                      <td style="white-space:nowrap">${formatarData(a.data_acidente)}</td>
+                      <td><div class="bold" style="font-size:0.85rem">${a.collaborators?.name ?? '—'}</div><div style="font-size:0.75rem;color:var(--texto-secundario)">${a.collaborators?.code ?? ''}</div></td>
+                      <td style="font-size:0.82rem">${a.tipo_acidente ?? '—'}</td>
+                      <td><span class="badge badge-${a.gravidade === 'leve' ? 'verde' : a.gravidade === 'moderado' ? 'laranja' : 'vermelho'}">${a.gravidade}</span></td>
+                      <td style="font-size:0.78rem">${a.local ?? '—'}</td>
+                      <td>${a.dias_baixa || '—'}</td>
+                      <td style="font-size:0.78rem">${a.epi_usado === 'sim' ? '✅' : a.epi_usado === 'nao' ? '❌' : a.epi_usado ?? '—'}</td>
+                    </tr>
+                  `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // ══════════════════════════════════════════════════════
+    // PLANO DE FÉRIAS
+    // ══════════════════════════════════════════════════════
+    async function gerarRelFerias() {
+      const ano = parseInt(document.getElementById('sel-ano').value) || anoActual;
+      const el  = document.getElementById('conteudo-relatorio');
+      el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--texto-secundario)">A carregar...</div>';
+      document.getElementById('rel-subtitulo-actual').textContent = `Ano ${ano}`;
+
+      const { data } = await db
+        .from('hst_ferias')
+        .select('*, collaborators(name, code, categoria)')
+        .eq('ano', ano)
+        .order('mes_previsto');
+
+      const ferias = data || [];
+      const MESES  = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+      const porMes = {};
+      MESES.forEach(m => porMes[m] = []);
+      ferias.forEach(f => {
+        if (f.mes_previsto && porMes[f.mes_previsto] !== undefined) {
+          porMes[f.mes_previsto].push(f);
+        }
+      });
+
+      el.innerHTML = `
+        <div class="stats-grid mb-3">
+          <div class="stat-card"><span class="stat-label">Total registos</span><span class="stat-valor texto-acento">${ferias.length}</span></div>
+          <div class="stat-card"><span class="stat-label">Confirmados</span><span class="stat-valor texto-azul">${ferias.filter(f => f.estado === 'confirmado').length}</span></div>
+          <div class="stat-card"><span class="stat-label">Gozados</span><span class="stat-valor texto-verde">${ferias.filter(f => f.estado === 'gozado').length}</span></div>
+          <div class="stat-card"><span class="stat-label">Adiados</span><span class="stat-valor texto-laranja">${ferias.filter(f => f.estado === 'adiado').length}</span></div>
+        </div>
+
+        ${MESES.map(mes => {
+          const lista = porMes[mes];
+          if (lista.length === 0) return '';
+          return `
+            <div class="card mb-2 print-card">
+              <div class="card-titulo">🗓 ${mes} — ${lista.length} colaborador(es)</div>
+              <div class="tabela-wrapper">
+                <table>
+                  <thead><tr><th>Colaborador</th><th>Função</th><th>Período</th><th>Dias</th><th>Estado</th></tr></thead>
+                  <tbody>
+                    ${lista.map(f => {
+                      const dias = f.data_inicio && f.data_fim
+                        ? Math.round((new Date(f.data_fim) - new Date(f.data_inicio)) / 86400000) + 1 : '—';
+                      return `
+                        <tr>
+                          <td class="bold" style="font-size:0.85rem">${f.collaborators?.name ?? '—'}</td>
+                          <td style="font-size:0.82rem">${f.collaborators?.categoria ?? '—'}</td>
+                          <td style="font-size:0.82rem">${f.data_inicio ? `${formatarData(f.data_inicio)} → ${formatarData(f.data_fim)}` : '—'}</td>
+                          <td>${dias}</td>
+                          <td><span class="badge badge-${f.estado === 'gozado' ? 'verde' : f.estado === 'confirmado' ? 'azul' : f.estado === 'adiado' ? 'laranja' : 'cinza'}">${f.estado}</span></td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        }).join('')}
+
+        ${ferias.length === 0 ? `
+          <div class="card" style="text-align:center;padding:2rem;color:var(--texto-secundario)">
+            Nenhum registo de férias para ${ano}.
+          </div>` : ''}
+      `;
+    }
+
+    // ── Helpers ───────────────────────────────────────────
+    function campo(label, valor) {
+      return `
+        <div class="print-campo">
+          <div class="print-campo-label">${label}</div>
+          <div class="print-campo-valor">${valor || '—'}</div>
+        </div>
+      `;
+    }
+
+    function labelCondicao(v) {
+      const m = { repouso:'Repouso', jejum:'Jejum', apos_esforco:'Após esforço',
+                  ja_medicou:'Já medicou', nao_medicou:'Não medicou', outro:'Outro' };
+      return m[v] || v || '—';
+    }
+  </script>
+
+</body>
+</html>
